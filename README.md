@@ -514,6 +514,6 @@ This project demonstrates:
 
 Abhishek Yadav
 
-Final Year Data Science Engineering Student
+Data Science Engineer
 
 Building CareerLens AI to understand and navigate the AI/ML job market using real-world hiring data.
