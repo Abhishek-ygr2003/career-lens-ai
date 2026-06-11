@@ -1,0 +1,23 @@
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments & credentials
+.env
+.venv
+venv/
+env/
+.env.*
+!.env.example
+
+# Local data (excluding gitkeep so folders are tracked)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+notebooks/.ipynb_checkpoints/
+
+# IDE files
+.vscode/
+.idea/
