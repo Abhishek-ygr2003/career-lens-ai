@@ -57,7 +57,7 @@ from analysis.experience_analysis import render_experience_analysis
 from analysis.category_analysis import render_category_analysis
 from analysis.company_analysis import render_company_analysis
 from analysis.market_intelligence import render_market_intelligence
-from analysis.ai_insights import render_ai_insights
+# from analysis.ai_insights import render_ai_insights
 
 # ═════════════════════════════════════════════════════════════
 #  CONSTANTS
@@ -325,6 +325,8 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_data() -> pd.DataFrame:
     """Load, validate, deduplicate and enrich the job dataset.
+
+    Trigger cache invalidate: v2
 
     Priority:
       1. Supabase direct (always fresh)
@@ -798,7 +800,6 @@ def main():
         "📂 Category",
         "🏢 Companies",
         "🧠 Market Intel",
-        "✨ AI Insights",
     ])
 
     with tabs[0]: render_market_overview(filtered_df)
@@ -808,8 +809,9 @@ def main():
     with tabs[4]: render_experience_analysis(filtered_df)
     with tabs[5]: render_category_analysis(filtered_df)
     with tabs[6]: render_company_analysis(filtered_df)
-    with tabs[7]: render_market_intelligence(filtered_df)
-    with tabs[8]: render_ai_insights(filtered_df)
+    with tabs[7]:
+        # Trigger reload of upgraded market intelligence module
+        render_market_intelligence(filtered_df)
 
     # ── Auto-rerun loop if collection is running ──────────────
     proc = st.session_state.get(_PROC_KEY)

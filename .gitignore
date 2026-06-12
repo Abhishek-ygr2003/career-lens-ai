@@ -21,3 +21,4 @@ notebooks/.ipynb_checkpoints/
 # IDE files
 .vscode/
 .idea/
+AGENTS.md

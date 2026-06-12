@@ -348,160 +348,29 @@ def parse_experience(min_raw, max_raw) -> dict:
 # 4. SKILL NORMALIZATION
 # ─────────────────────────────────────────────────────────────
 
-# Alias map: lowercase variant → canonical form
-SKILL_ALIASES = {
-    # Python
-    "python programming": "python",
-    "python3": "python",
-    "py": "python",
-    "python scripting": "python",
-    # Machine Learning
-    "ml": "machine learning",
-    "machine-learning": "machine learning",
-    "applied machine learning": "machine learning",
-    # Deep Learning
-    "dl": "deep learning",
-    "deep-learning": "deep learning",
-    # AI / GenAI
-    "artificial intelligence": "ai",
-    "generative ai": "gen ai",
-    "genai": "gen ai",
-    "llm": "large language models",
-    "large language model": "large language models",
-    "llms": "large language models",
-    "rag": "retrieval augmented generation",
-    "langchain": "langchain",
-    "lang chain": "langchain",
-    # NLP
-    "natural language processing": "nlp",
-    "natural-language-processing": "nlp",
-    # Databases / SQL
-    "postgresql": "sql",
-    "postgres": "sql",
-    "mysql": "sql",
-    "microsoft sql server": "sql",
-    "t-sql": "sql",
-    "pl/sql": "sql",
-    "structured query language": "sql",
-    # Cloud
-    "amazon web services": "aws",
-    "google cloud platform": "gcp",
-    "google cloud": "gcp",
-    "microsoft azure": "azure",
-    # Data tools
-    "apache spark": "spark",
-    "apache kafka": "kafka",
-    "apache airflow": "airflow",
-    # DevOps / MLOps
-    "devops": "devops",
-    "ml ops": "mlops",
-    "ml-ops": "mlops",
-    # BI tools
-    "power bi": "power bi",
-    "powerbi": "power bi",
-    "tableau software": "tableau",
-    # Stats / Data Science
-    "r programming": "r",
-    "statistics": "statistics",
-    "statistical analysis": "statistics",
-    # Computer Vision
-    "cv": "computer vision",
-    "image processing": "computer vision",
-    # TensorFlow / PyTorch
-    "tensorflow": "tensorflow",
-    "tf": "tensorflow",
-    "pytorch": "pytorch",
-    "torch": "pytorch",
-    # Containers
-    "docker": "docker",
-    "kubernetes": "kubernetes",
-    "k8s": "kubernetes",
+# ─────────────────────────────────────────────────────────────
+# 4. SKILL NORMALIZATION & EXTRACTION ENGINE
+# ─────────────────────────────────────────────────────────────
 
-    # ── Expanded: modern AI/ML tools ─────────────────────────
-    "hugging face": "huggingface",
-    "huggingface": "huggingface",
-    "openai": "openai",
-    "open ai": "openai",
-    "anthropic": "anthropic",
-    "gemini": "gemini",
-    "vertex ai": "vertex ai",
-    "vertexai": "vertex ai",
-    "mistral": "mistral",
-    "ollama": "ollama",
-    "llamaindex": "llamaindex",
-    "llama index": "llamaindex",
-    "pinecone": "pinecone",
-    "chromadb": "chromadb",
-    "chroma db": "chromadb",
-    "weaviate": "weaviate",
-    "vector database": "vector databases",
-    "vector db": "vector databases",
-    "prompt engineering": "prompt engineering",
-    "fine tuning": "fine-tuning",
-    "fine-tuning": "fine-tuning",
-    "finetuning": "fine-tuning",
-    "mlflow": "mlflow",
-    "dvc": "dvc",
-    "wandb": "wandb",
-    "weights and biases": "wandb",
-    "fastapi": "fastapi",
-    "flask": "flask",
-    "django": "django",
-    "streamlit": "streamlit",
-    "gradio": "gradio",
-    "databricks": "databricks",
-    "snowflake": "snowflake",
-    "dbt": "dbt",
-    "data build tool": "dbt",
-    "great expectations": "great expectations",
-    "pandas": "pandas",
-    "numpy": "numpy",
-    "scikit learn": "scikit-learn",
-    "scikit-learn": "scikit-learn",
-    "sklearn": "scikit-learn",
-    "matplotlib": "matplotlib",
-    "seaborn": "seaborn",
-    "plotly": "plotly",
-    "git": "git",
-    "github": "github",
-    "ci cd": "ci/cd",
-    "ci/cd": "ci/cd",
-    "jenkins": "jenkins",
-    "terraform": "terraform",
-    "ansible": "ansible",
-    "linux": "linux",
-    "java": "java",
-    "scala": "scala",
-    "golang": "go",
-    "go lang": "go",
-    "rust": "rust",
-    "c++": "c++",
-    "cpp": "c++",
-    "javascript": "javascript",
-    "typescript": "typescript",
-    "react": "react",
-    "angular": "angular",
-    "node js": "node.js",
-    "nodejs": "node.js",
-    "mongodb": "mongodb",
-    "redis": "redis",
-    "elasticsearch": "elasticsearch",
-    "neo4j": "neo4j",
-    "graphql": "graphql",
-    "rest api": "rest api",
-    "restful api": "rest api",
-    "api development": "rest api",
-    "excel": "excel",
-    "ms excel": "excel",
-    "microsoft excel": "excel",
-    "salesforce": "salesforce",
-    "sap": "sap",
-    "crm": "crm",
-    "erp": "erp",
-    "jira": "jira",
-    "agile": "agile",
-    "scrum": "scrum",
-}
+def load_skill_taxonomy() -> dict:
+    """Load the skill taxonomy mapping from JSON."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    tax_path = os.path.join(project_root, "data", "skill_taxonomy.json")
+    if os.path.exists(tax_path):
+        try:
+            with open(tax_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading skill taxonomy from {tax_path}: {e}")
+    return {}
+
+# Load mapping dynamically on module import
+_TAXONOMY = load_skill_taxonomy()
+SKILL_ALIASES = {}
+for canonical, aliases in _TAXONOMY.items():
+    for alias in aliases:
+        SKILL_ALIASES[alias.lower().strip()] = canonical
 
 def normalize_skill(skill: str) -> str:
     """
@@ -511,32 +380,57 @@ def normalize_skill(skill: str) -> str:
     if not skill:
         return ""
     cleaned = skill.lower().strip()
-    # Remove excess whitespace and common noise chars
     cleaned = re.sub(r'[\-_/\\]+', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return SKILL_ALIASES.get(cleaned, cleaned)
 
-
-def standardize_skills(raw_skills: list) -> dict:
+def extract_skills_from_text(title: str, description: str) -> list:
     """
-    Takes a raw skills list (TEXT[] from DB) and returns:
-    {
-      "raw_skills": [...],           # original list, unchanged
-      "standardized_skills": [...]   # deduplicated, normalized list
-    }
+    Extract canonical skills from job title and description text.
+    Matches aliases using word boundaries for safety.
+    """
+    text = (title or "") + " " + (description or "")
+    text_lower = text.lower()
+    
+    extracted = set()
+    for alias, canonical in SKILL_ALIASES.items():
+        # Prevent partial word matching for short terms (like 'r', 'go')
+        if len(alias) <= 3:
+            pattern = rf"\b{re.escape(alias)}\b"
+        else:
+            pattern = re.escape(alias)
+            
+        if re.search(pattern, text_lower):
+            extracted.add(canonical)
+            
+    return sorted(list(extracted))
+
+def standardize_skills(raw_skills: list, title: str = "", description: str = "") -> dict:
+    """
+    Takes raw skills list and context texts, standardizes raw list,
+    extracts extra skills from texts, and returns a merged deduplicated list.
     """
     if not raw_skills:
-        return {"raw_skills": [], "standardized_skills": []}
-
+        raw_skills = []
+        
     raw = [str(s).strip() for s in raw_skills if s and str(s).strip()]
     normalized = []
     seen = set()
+    
+    # 1. Process raw scraped skills
     for skill in raw:
         norm = normalize_skill(skill)
         if norm and norm not in seen:
             seen.add(norm)
             normalized.append(norm)
-
+            
+    # 2. Extract skills from title + description text
+    text_skills = extract_skills_from_text(title, description)
+    for skill in text_skills:
+        if skill not in seen:
+            seen.add(skill)
+            normalized.append(skill)
+            
     return {
         "raw_skills": raw,
         "standardized_skills": normalized,
@@ -745,12 +639,13 @@ def clean_job(raw_job: dict, search_keyword: str | None = None) -> dict:
         raw_job.get("max_experience"),
     )
 
-    # ── Skills ────────────────────────────────────────────────
-    skills_data = standardize_skills(raw_job.get("skills") or [])
-
     # ── Description ───────────────────────────────────────────
     description_raw = raw_job.get("description") or ""
     description_clean = strip_html(description_raw)
+
+    # ── Skills (Enrich with title and description text) ───────
+    title = raw_job.get("title") or ""
+    skills_data = standardize_skills(raw_job.get("skills") or [], title, description_clean)
 
     # ── Category (two-level + legacy) ─────────────────────────
     title = raw_job.get("title") or ""

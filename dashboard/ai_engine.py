@@ -21,15 +21,17 @@ def generate_market_context(df) -> str:
     return f"Total jobs: {total}. Top cities: {cities}. Top categories: {categories}."
 
 def get_gemini_insight(context: str) -> str:
-    import google.generativeai as genai
+    from google import genai
     key = get_gemini_api_key()
     if not key:
         return "API key missing."
     try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        client = genai.Client(api_key=key)
         prompt = f"Analyze the following job market data and provide 3 key insights:\n{context}"
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
         return response.text
     except Exception as e:
         return f"Error generating insights: {e}"

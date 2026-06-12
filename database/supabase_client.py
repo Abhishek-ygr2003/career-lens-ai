@@ -52,9 +52,6 @@ def get_supabase_client():
 def fetch_all_jobs(page_size: int = 1000) -> list:
     """
     Fetch ALL records from the `jobs` table using pagination.
-    Supabase PostgREST caps responses at 1000 rows by default;
-    we loop with .range() until we get an empty page.
-
     Returns:
         List of job dicts from the raw `jobs` table.
     """
@@ -62,7 +59,7 @@ def fetch_all_jobs(page_size: int = 1000) -> list:
     all_jobs = []
     offset = 0
 
-    print("Fetching all jobs from Supabase (paginated)...")
+    print("Fetching all raw jobs from Supabase (paginated)...")
     while True:
         try:
             response = (
@@ -91,9 +88,6 @@ def fetch_uncleaned_jobs(page_size: int = 1000) -> list:
     """
     Fetch only jobs that have never been cleaned (cleaned_at IS NULL)
     or were updated since last clean (updated_at > cleaned_at).
-
-    This is the key function for incremental cleaning — avoids
-    re-processing thousands of already-cleaned jobs every run.
     """
     client = get_supabase_client()
     all_jobs = []
@@ -129,7 +123,6 @@ def fetch_uncleaned_jobs(page_size: int = 1000) -> list:
 def mark_jobs_cleaned(job_ids: list) -> None:
     """
     Stamp cleaned_at = NOW() on the given raw job IDs.
-    Called after successful cleaning + analytics upsert.
     """
     if not job_ids:
         return
@@ -148,14 +141,13 @@ def mark_jobs_cleaned(job_ids: list) -> None:
         except Exception as e:
             print(f"  Warning: Failed to mark batch {i // batch_size + 1} as cleaned: {e}")
 
-    print(f"✓ Marked {len(job_ids)} jobs as cleaned.")
+    print(f"✓ Marked {len(job_ids)} raw jobs as cleaned.")
 
 
 def fetch_known_job_ids(source: str) -> set:
     """
     Return a set of all source_job_id values already in the jobs table
-    for the given source. Used to pre-filter before upserting, avoiding
-    unnecessary upsert overhead for already-known jobs.
+    for the given source.
     """
     client = get_supabase_client()
     all_ids = set()
@@ -210,7 +202,7 @@ def mark_stale_jobs(stale_days: int = 14) -> int:
         )
         stale_count += len(getattr(response, "data", []) or [])
     except Exception as e:
-        print(f"  Warning: Failed to mark stale jobs: {e}")
+        print(f"  Warning: Failed to mark stale jobs in jobs: {e}")
 
     # Mark in jobs_analytics table
     try:
@@ -222,7 +214,7 @@ def mark_stale_jobs(stale_days: int = 14) -> int:
             .execute()
         )
     except Exception as e:
-        print(f"  Warning: Failed to mark stale analytics: {e}")
+        print(f"  Warning: Failed to mark stale analytics in jobs_analytics: {e}")
 
     if stale_count > 0:
         print(f"✓ Marked {stale_count} jobs as inactive (not seen in {stale_days} days).")
@@ -239,14 +231,11 @@ def mark_stale_jobs(stale_days: int = 14) -> int:
 def upsert_jobs(jobs_list: list) -> list:
     """
     Upsert a list of standardized job dicts into Supabase 'jobs' table.
-    Ensures idempotency using the (source, source_job_id) constraint.
-    Updates last_seen_at and updated_at on every upsert.
     """
     if not jobs_list:
         print("No jobs to insert.")
         return []
 
-    # Deduplicate within the batch to prevent ON CONFLICT DO UPDATE errors
     unique_jobs = {}
     for job in jobs_list:
         key = (job.get("source"), job.get("source_job_id"))
@@ -254,7 +243,6 @@ def upsert_jobs(jobs_list: list) -> list:
 
     deduped_jobs = list(unique_jobs.values())
 
-    # Add last_seen_at and updated_at to every record
     now_str = datetime.now(timezone.utc).isoformat()
     for job in deduped_jobs:
         job["last_seen_at"] = now_str
@@ -262,7 +250,7 @@ def upsert_jobs(jobs_list: list) -> list:
 
     client = get_supabase_client()
     try:
-        print(f"Uploading {len(deduped_jobs)} unique jobs (from {len(jobs_list)} total) to Supabase...")
+        print(f"Uploading {len(deduped_jobs)} unique jobs to Supabase `jobs`...")
 
         batch_size = 500
         all_data = []
@@ -276,32 +264,42 @@ def upsert_jobs(jobs_list: list) -> list:
             all_data.extend(data)
             print(f"  Batch {i // batch_size + 1}: upserted {len(data)} records.")
 
-        print(f"Successfully upserted {len(all_data)} records in Supabase.")
+        print(f"Successfully upserted {len(all_data)} records in jobs.")
         return all_data
     except Exception as e:
-        print(f"Error upserting jobs into Supabase: {e}")
+        print(f"Error upserting jobs into Supabase jobs: {e}")
         raise e
+
+
+def upsert_job_skills(skills_mappings: list) -> None:
+    """
+    Upsert a list of skill mappings into `job_skills`.
+    """
+    if not skills_mappings:
+        return
+    client = get_supabase_client()
+    try:
+        print(f"Upserting {len(skills_mappings)} skill associations to `job_skills`...")
+        batch_size = 500
+        for i in range(0, len(skills_mappings), batch_size):
+            batch = skills_mappings[i : i + batch_size]
+            client.table("job_skills").upsert(batch).execute()
+    except Exception as e:
+        print(f"  Warning: Failed to upsert job skills: {e}")
 
 
 def upsert_analytics(jobs_list: list, batch_size: int = 500) -> int:
     """
     Batch-upsert cleaned job records into the `jobs_analytics` table.
-    Uses `fingerprint` as the conflict column (ON CONFLICT DO UPDATE).
-    Processes in batches to avoid request size limits.
-
-    Args:
-        jobs_list: List of cleaned job dicts from cleaning/cleaner.py
-        batch_size: Number of records per upsert batch (default 500)
-
-    Returns:
-        Total number of records upserted.
+    After upserting cleaned jobs, standardizes and registers their skill mapping in `job_skills`.
     """
     if not jobs_list:
-        print("No cleaned jobs to upsert into jobs_analytics.")
+        print("No cleaned jobs to upsert.")
         return 0
 
     client = get_supabase_client()
     total_upserted = 0
+    skills_to_insert = []
 
     print(f"Upserting {len(jobs_list)} cleaned jobs into jobs_analytics (batch size: {batch_size})...")
     for i in range(0, len(jobs_list), batch_size):
@@ -315,9 +313,24 @@ def upsert_analytics(jobs_list: list, batch_size: int = 500) -> int:
             data = getattr(response, "data", []) or []
             total_upserted += len(data)
             print(f"  Batch {i // batch_size + 1}: upserted {len(data)} records.")
+            
+            # Form skill mapping associations
+            for record in data:
+                job_id = record.get("id")
+                std_skills = record.get("standardized_skills") or []
+                if job_id and std_skills:
+                    for skill in std_skills:
+                        skills_to_insert.append({
+                            "job_id": job_id,
+                            "skill_name": skill,
+                            "confidence": 1.0
+                        })
         except Exception as e:
             print(f"  Error upserting batch {i // batch_size + 1}: {e}")
             raise e
+
+    if skills_to_insert:
+        upsert_job_skills(skills_to_insert)
 
     print(f"✓ Successfully upserted {total_upserted} records into jobs_analytics.")
     return total_upserted
@@ -327,7 +340,6 @@ def upsert_analytics(jobs_list: list, batch_size: int = 500) -> int:
 #  DASHBOARD DATA LOADING (from Supabase directly)
 # ═════════════════════════════════════════════════════════════
 
-# Columns the dashboard needs — exclude heavy description_raw
 _DASHBOARD_COLUMNS = (
     "id,fingerprint,title,company,job_category,job_field,job_sub_field,"
     "city,state,work_mode,source,min_exp,max_exp,min_salary,max_salary,"
@@ -343,8 +355,6 @@ def fetch_analytics_for_dashboard(
 ) -> list:
     """
     Fetch jobs_analytics records for the dashboard.
-    Excludes heavy columns (description_raw, description, raw_skills).
-    Supports pagination for large datasets.
     """
     client = get_supabase_client()
     all_rows = []
@@ -417,7 +427,6 @@ def fetch_all_analytics(page_size: int = 1000) -> list:
 def log_collection_run(keyword: str, source: str) -> str | None:
     """
     Insert a new collection_runs row with status='running'.
-    Returns the run UUID or None if the table doesn't exist yet.
     """
     client = get_supabase_client()
     try:
@@ -434,7 +443,6 @@ def log_collection_run(keyword: str, source: str) -> str | None:
         if data:
             return data[0].get("id")
     except Exception as e:
-        # Table may not exist yet — silently skip
         print(f"  Note: collection_runs logging skipped: {e}")
     return None
 
@@ -466,9 +474,7 @@ def update_collection_run(
 
 def get_recent_collection(keyword: str, source: str, cooldown_minutes: int = 60) -> dict | None:
     """
-    Check if a successful collection was run for this keyword+source
-    within the last `cooldown_minutes`. Returns the run dict if found.
-    Used by dashboard to prevent redundant back-to-back fetches.
+    Check if a successful collection was run for this keyword+source within the last cooldown.
     """
     client = get_supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)).isoformat()
@@ -488,3 +494,77 @@ def get_recent_collection(keyword: str, source: str, cooldown_minutes: int = 60)
         return data[0] if data else None
     except Exception:
         return None
+
+
+# ═════════════════════════════════════════════════════════════
+#  PRECOMPUTED ANALYTICS ACCESS
+# ═════════════════════════════════════════════════════════════
+
+def load_local_precomputed() -> dict:
+    """Load precomputed analytics from local processed JSON fallback."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    fallback_path = os.path.join(project_root, "data", "processed", "precomputed_analytics.json")
+    if os.path.exists(fallback_path):
+        try:
+            with open(fallback_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def fetch_skill_demand_history() -> list:
+    try:
+        client = get_supabase_client()
+        res = client.table("skill_demand_history").select("*").order("date").execute()
+        return getattr(res, "data", []) or []
+    except Exception as e:
+        print(f"Error fetching skill demand history: {e}. Falling back to local file.")
+        return load_local_precomputed().get("skill_demand_history", [])
+
+
+def fetch_skill_gap_analysis(stream: str = None) -> list:
+    try:
+        client = get_supabase_client()
+        query = client.table("skill_gap_analysis").select("*")
+        if stream and stream != "all":
+            query = query.eq("stream", stream)
+        res = query.order("date").execute()
+        return getattr(res, "data", []) or []
+    except Exception as e:
+        print(f"Error fetching skill gap analysis: {e}. Falling back to local file.")
+        data = load_local_precomputed().get("skill_gap_analysis", [])
+        if stream and stream != "all":
+            data = [d for d in data if d.get("stream") == stream]
+        return data
+
+
+def fetch_salary_insights() -> list:
+    try:
+        client = get_supabase_client()
+        res = client.table("salary_insights").select("*").order("date").execute()
+        return getattr(res, "data", []) or []
+    except Exception as e:
+        print(f"Error fetching salary insights: {e}. Falling back to local file.")
+        return load_local_precomputed().get("salary_insights", [])
+
+
+def fetch_location_insights() -> list:
+    try:
+        client = get_supabase_client()
+        res = client.table("location_insights").select("*").order("date").execute()
+        return getattr(res, "data", []) or []
+    except Exception as e:
+        print(f"Error fetching location insights: {e}. Falling back to local file.")
+        return load_local_precomputed().get("location_insights", [])
+
+
+def fetch_company_hiring_stats() -> list:
+    try:
+        client = get_supabase_client()
+        res = client.table("company_hiring_stats").select("*").order("date").execute()
+        return getattr(res, "data", []) or []
+    except Exception as e:
+        print(f"Error fetching company hiring stats: {e}. Falling back to local file.")
+        return load_local_precomputed().get("company_hiring_stats", [])
