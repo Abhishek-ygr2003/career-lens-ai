@@ -101,6 +101,203 @@ def render_market_intelligence(df: pd.DataFrame):
         else:
             st.info("No active volume metrics computed.")
 
+        st.divider()
+        st.markdown("##### 🕸️ Career Path Radar (Field Demand • Common Skills • Future Skills)")
+
+        # Helper: get latest snapshot date from dataframe
+        def _latest_snapshot_date(dataframe: pd.DataFrame):
+            if dataframe is None or dataframe.empty:
+                return None
+            for col in ["collected_at", "date"]:
+                if col in dataframe.columns:
+                    try:
+                        s = pd.to_datetime(dataframe[col], errors="coerce")
+                        s = s.dropna()
+                        if not s.empty:
+                            return s.max().date()
+                    except Exception:
+                        pass
+            return None
+
+        # Radar 1: Top job fields demand share (based on job_field from latest snapshot)
+        latest_dt = _latest_snapshot_date(df)
+        radar_col1, radar_col2, radar_col3 = st.columns(3)
+
+        with radar_col1:
+            st.markdown("###### 🏗️ Top Job Fields Demand")
+            if (
+                latest_dt is not None
+                and "job_field" in df.columns
+                and "collected_at" in df.columns
+                and not df.empty
+            ):
+                df_tmp = df.copy()
+                df_tmp["__collected_at"] = pd.to_datetime(df_tmp["collected_at"], errors="coerce")
+                df_tmp = df_tmp[df_tmp["__collected_at"].dt.date == latest_dt]
+                if df_tmp["job_field"].notna().any():
+                    field_share = (
+                        df_tmp["job_field"]
+                        .dropna()
+                        .value_counts(normalize=True)
+                        .head(8)
+                        * 100
+                    ).round(1)
+
+                    labels = field_share.index.astype(str).tolist()
+                    values = field_share.values.tolist()
+
+                    fig_field = go.Figure(
+                        data=[
+                            go.Scatterpolar(
+                                r=values + [values[0]] if values else values,
+                                theta=labels + [labels[0]] if labels else labels,
+                                fill="toself",
+                                name="Demand share (%)",
+                                marker=dict(color="#3b82f6")
+                            )
+                        ]
+                    )
+                    fig_field.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15 if values else 100])
+                        ),
+                        showlegend=False,
+                        height=360,
+                        **PLOTLY_LAYOUT,
+                        margin=dict(l=10, r=10, t=20, b=10),
+                    )
+                    fig_field.update_traces(
+                        hovertemplate="%{theta}<br>Demand share: %{r}%<extra></extra>"
+                    )
+                    st.plotly_chart(fig_field, use_container_width=True)
+                else:
+                    st.info("No job_field demand data in the latest snapshot.")
+            else:
+                st.info("Not enough data to compute field demand share.")
+
+        # Radar 2: Top common skills (from skill_demand_history latest)
+        with radar_col2:
+            st.markdown("###### 💡 Most Common Skills (Current Demand)")
+            hist_records = fetch_skill_demand_history()
+            if hist_records:
+                hdf = pd.DataFrame(hist_records)
+                if not hdf.empty and {"skill_name", "demand_percentage", "date"}.issubset(set(hdf.columns)):
+                    latest_date = pd.to_datetime(hdf["date"], errors="coerce").max()
+                    latest_date_str = latest_date.date().isoformat() if pd.notna(latest_date) else None
+                    h_latest = hdf.copy()
+                    h_latest["__date"] = pd.to_datetime(h_latest["date"], errors="coerce")
+                    if latest_date_str:
+                        h_latest = h_latest[h_latest["__date"].dt.date == latest_date_str]
+                    top_skills = (
+                        h_latest.dropna(subset=["skill_name"])
+                        .sort_values("demand_percentage", ascending=False)
+                        .head(8)
+                    )
+                    labels = top_skills["skill_name"].astype(str).tolist()
+                    values = top_skills["demand_percentage"].astype(float).tolist()
+
+                    fig_skill = go.Figure(
+                        data=[
+                            go.Scatterpolar(
+                                r=values + [values[0]] if values else values,
+                                theta=labels + [labels[0]] if labels else labels,
+                                fill="toself",
+                                name="Demand index (%)",
+                                marker=dict(color="#8b5cf6")
+                            )
+                        ]
+                    )
+                    fig_skill.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15 if values else 100])
+                        ),
+                        showlegend=False,
+                        height=360,
+                        **PLOTLY_LAYOUT,
+                        margin=dict(l=10, r=10, t=20, b=10),
+                    )
+                    fig_skill.update_traces(
+                        hovertemplate="%{theta}<br>Demand index: %{r}%<extra></extra>"
+                    )
+                    st.plotly_chart(fig_skill, use_container_width=True)
+                else:
+                    st.info("Skill demand history exists but is missing expected columns.")
+            else:
+                st.info("No skill demand history computed yet.")
+
+        # Radar 3: Future Skills / Emerging Trends (high gap + rising trend)
+        with radar_col3:
+            st.markdown("###### 🔮 Future Skills & Emerging Trends")
+            st.caption("Skills with high talent gaps (demand > supply) & rising demand — signals for next 2-3 years")
+            
+            # Get gap analysis for future signals
+            gap_records = fetch_skill_gap_analysis("all")
+            hist_records = fetch_skill_demand_history()
+            
+            future_labels = []
+            future_values = []
+            
+            if gap_records and hist_records:
+                gap_df = pd.DataFrame(gap_records)
+                hist_df = pd.DataFrame(hist_records)
+                
+                # Get latest gap snapshot
+                latest_gap_date = gap_df["date"].max()
+                gap_latest = gap_df[gap_df["date"] == latest_gap_date].copy()
+                
+                # Get skills with significant talent shortage (gap > 5)
+                shortage_skills = gap_latest[gap_latest["gap_score"] > 5].sort_values("gap_score", ascending=False)
+                
+                # Calculate trend (growth rate) from historical data for these skills
+                if not shortage_skills.empty and not hist_df.empty:
+                    skill_trends = {}
+                    for skill in shortage_skills["skill_name"].unique():
+                        skill_hist = hist_df[hist_df["skill_name"] == skill].sort_values("date")
+                        if len(skill_hist) >= 2:
+                            # Calculate simple growth rate: (latest - earliest) / earliest
+                            first_val = skill_hist.iloc[0]["demand_percentage"]
+                            last_val = skill_hist.iloc[-1]["demand_percentage"]
+                            if first_val > 0:
+                                growth = ((last_val - first_val) / first_val) * 100
+                                skill_trends[skill] = growth
+                    
+                    # Combine gap score + trend for future priority score
+                    shortage_skills = shortage_skills.copy()
+                    shortage_skills["trend_growth"] = shortage_skills["skill_name"].map(skill_trends).fillna(0)
+                    shortage_skills["future_score"] = shortage_skills["gap_score"] + (shortage_skills["trend_growth"].clip(0, 50) * 0.5)
+                    
+                    top_future = shortage_skills.sort_values("future_score", ascending=False).head(8)
+                    future_labels = top_future["skill_name"].astype(str).tolist()
+                    future_values = top_future["future_score"].astype(float).tolist()
+            
+            if future_labels:
+                fig_future = go.Figure(
+                    data=[
+                        go.Scatterpolar(
+                            r=future_values + [future_values[0]],
+                            theta=future_labels + [future_labels[0]],
+                            fill="toself",
+                            name="Future Priority Score",
+                            marker=dict(color="#f59e0b")
+                        )
+                    ]
+                )
+                fig_future.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(future_values) * 1.15 if future_values else 100])
+                    ),
+                    showlegend=False,
+                    height=360,
+                    **PLOTLY_LAYOUT,
+                    margin=dict(l=10, r=10, t=20, b=10),
+                )
+                fig_future.update_traces(
+                    hovertemplate="%{theta}<br>Future Priority: %{r:.0f}<extra></extra>"
+                )
+                st.plotly_chart(fig_future, use_container_width=True)
+            else:
+                st.info("Insufficient gap/history data to compute future skills radar.")
+                
     # ─────────────────────────────────────────────────────────
     # SUB-TAB 2: Skill Gap Engine
     # ─────────────────────────────────────────────────────────
