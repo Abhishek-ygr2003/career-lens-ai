@@ -1,4 +1,7 @@
--- Create jobs table
+-- ============================================================
+-- CareerLens AI — jobs (Raw Collection Table)
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source VARCHAR(50) NOT NULL,              -- e.g., 'foundit'
@@ -20,7 +23,14 @@ CREATE TABLE IF NOT EXISTS jobs (
     raw_data JSONB,                           -- Raw JSON payload for audits/history
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    
+
+    -- Incremental cleaning: NULL = never cleaned
+    cleaned_at TIMESTAMPTZ DEFAULT NULL,
+
+    -- Stale job detection
+    is_active BOOLEAN DEFAULT TRUE,
+    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+
     -- Ensure uniqueness for source + source_job_id
     CONSTRAINT unique_source_job UNIQUE (source, source_job_id)
 );
@@ -28,3 +38,12 @@ CREATE TABLE IF NOT EXISTS jobs (
 -- Index definitions
 CREATE INDEX IF NOT EXISTS idx_jobs_source_job_id ON jobs(source, source_job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_title ON jobs(title);
+
+-- Incremental cleaning index — efficient lookup for dirty rows
+CREATE INDEX IF NOT EXISTS idx_jobs_dirty
+    ON jobs(cleaned_at, updated_at)
+    WHERE cleaned_at IS NULL OR updated_at > cleaned_at;
+
+-- Stale job detection index
+CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_is_active ON jobs(is_active);

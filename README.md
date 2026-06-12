@@ -1,518 +1,428 @@
 # CareerLens AI
+
 ### AI-Powered Job Market Intelligence & Career Analytics Platform
 
 ---
 
 ## Overview
 
-CareerLens AI is a personal data engineering and analytics platform designed to help aspiring AI/ML/Data Science professionals understand the real job market using live job data collected from multiple job portals.
+CareerLens AI is a **Job Market Intelligence System** that helps AI/ML/Data Science professionals understand the real hiring landscape using live job data collected from multiple job portals.
 
-Instead of relying on generic career advice, CareerLens AI gathers real-world job postings, cleans and standardizes the data, stores it in a centralized database, and generates actionable insights such as:
+Instead of relying on generic career advice, CareerLens AI:
 
-- Most demanded AI/ML skills
-- Top hiring companies
-- Bengaluru vs Hyderabad job opportunities
-- Experience-level demand trends
-- Emerging technologies in job descriptions
-- Resume-to-market fit analysis (future feature)
+1. **Collects** real-world job postings from Naukri and Foundit
+2. **Cleans & standardizes** the data through a full ETL pipeline
+3. **Stores** it in a centralized analytics warehouse (Supabase PostgreSQL)
+4. **Visualizes** market trends through an interactive Streamlit dashboard
+5. **Provides AI insights** using Google Gemini — grounded in actual market data
 
-The primary goal is to answer:
+The core question it answers:
 
 > "What skills should I learn to maximize my chances of getting hired?"
 
-using actual market data rather than assumptions.
+using actual hiring data rather than assumptions.
 
 ---
 
-# Problem Statement
+## Problem Statement
 
 Most students and freshers:
 
-- Learn random technologies
+- Learn random technologies without market context
 - Follow outdated roadmaps
 - Have no visibility into current hiring trends
 - Don't know whether their skills match market demand
+- Can't easily compare career paths (Data Science vs Data Analytics)
 
-CareerLens AI solves this by creating a continuously updated job market intelligence system.
-
----
-
-# Objectives
-
-The platform aims to:
-
-### Data Collection
-
-Collect AI/ML/Data Science jobs from multiple sources:
-
-- Foundit
-- Indeed
-- LinkedIn (future)
-- Naukri (future)
+**CareerLens AI solves this** by creating a continuously updated job market intelligence system with data-driven career guidance.
 
 ---
 
-### Data Engineering
+## What Makes CareerLens Different?
 
-Build a complete ETL pipeline:
-
-- Data Collection
-- Data Validation
-- Data Cleaning
-- Data Standardization
-- Data Storage
-
----
-
-### Analytics
-
-Generate insights such as:
-
-- Top Skills by Frequency
-- Skill Demand Growth
-- Location-wise Hiring Trends
-- Company-wise Hiring Trends
-- Experience Level Analysis
+| Feature | Naukri / Foundit | CareerLens AI |
+|---|---|---|
+| Show jobs | ✅ | ✅ |
+| Search jobs | ✅ | ✅ |
+| **Understand the job market** | ❌ | ✅ |
+| **Compare career paths** | ❌ | ✅ |
+| **Skill demand analysis** | ❌ | ✅ |
+| **City-wise market intelligence** | ❌ | ✅ |
+| **AI-powered career advice** | ❌ | ✅ |
+| **Data-backed skill roadmaps** | ❌ | 🔜 |
 
 ---
 
-### Career Intelligence
+## Dashboard Features
 
-Provide personalized recommendations:
+### 📊 Market Overview
+KPI cards, category distribution, source breakdown, city rankings, and work mode analysis.
 
-- Skill Gap Analysis
-- Resume Match Score
-- Recommended Technologies
-- Recommended Learning Path
+### 🔍 Job Explorer
+Search and inspect actual job postings with full details — title, company, skills, experience, location, and direct links to original postings.
 
----
+### 📈 Skill Demand
+Top skills by frequency, skill co-occurrence heatmap, and percentage tables showing which skills appear in the most job postings.
 
-# Current Development Stage
+### 📍 Location Analysis
+City-wise job distribution, state mapping, and city × skill heatmaps showing which skills are most demanded in each city.
 
-### Phase 1 (Completed)
+### 💼 Experience Analysis
+Experience band distribution (Fresher, Junior, Mid, Senior, Lead), category × experience cross-tabulation.
 
-- Foundit API discovery
-- API reverse engineering
-- Job collector development
-- Raw JSON storage
-- Schema discovery
-- Supabase integration
-- Initial database loading
+### 🏷️ Category Analysis
+Job category distribution, top skills per category comparison, and category × city heatmap.
 
----
+### 🏢 Company Analysis
+Top hiring companies, company skill profiles, and company location spread.
 
-### Phase 2 (In Progress)
+### ⚔️ Market Intelligence
+**The differentiator.** Side-by-side comparisons that you can't get from Naukri or Foundit:
 
-- Data Cleaning Layer
-- Duplicate Detection
-- Data Validation
-- Data Standardization
+- **Category vs Category** — Data Science vs Data Analytics
+- **City vs City** — Bangalore vs Hyderabad
+- **Work Mode vs Work Mode** — Remote vs Onsite
 
----
+Each comparison shows: total jobs, top skills, experience distribution, and top companies.
 
-### Phase 3 (Planned)
+### 🤖 AI Insights
+Auto-generated market insight cards (no API key required) plus optional Gemini-powered natural language Q&A:
 
-- Analytics Engine
-- Dashboard Development
-- Market Trend Analysis
+- "What skills should I learn for Machine Learning?"
+- "Which city has the most fresher-friendly jobs?"
+- "Compare MLOps vs Generative AI demand"
 
----
-
-### Phase 4 (Planned)
-
-- Resume Scanner
-- Resume vs Market Comparison
-- Skill Recommendation Engine
+The AI answers using **only real market data** — never general knowledge.
 
 ---
 
-# Tech Stack
+## Quick Start
 
-## Backend
+### Prerequisites
 
-- Python
+- Python 3.10+
+- Supabase account (for data storage)
+- Google Gemini API key (optional, for AI Insights)
 
-## Data Collection
+### Installation
 
-- Requests
-- JSON
+```bash
+# Clone the repository
+git clone https://github.com/your-username/career-lens-ai.git
+cd career-lens-ai
 
-## Data Processing
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
 
-- Pandas
-- NumPy
+# Install dependencies
+pip install -r requirements.txt
 
-## Database
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your Supabase credentials and optional Gemini API key
+```
 
-- PostgreSQL
-- Supabase
+### Run the Data Pipeline
 
-## Data Visualization
+```bash
+# Collect from Foundit
+python main.py --source foundit
 
-- Matplotlib
-- Seaborn
-- Plotly
+# Collect from Naukri
+python main.py --source naukri
 
-## Notebook Environment
+# Re-run cleaning only (no collection)
+python main.py --clean-only
 
-- Jupyter Notebook
+# Dry run (preview without uploading)
+python main.py --source foundit --dry-run
+```
 
-## Development Environment
+### Launch the Dashboard
 
-- VS Code
+```bash
+streamlit run dashboard/app.py
+```
 
-## Version Control
-
-- Git
-- GitHub
+The dashboard opens at `http://localhost:8501`.
 
 ---
 
-# Project Structure
+## Architecture
+
+### High-Level Architecture
+
+```text
+Job Portals (Naukri + Foundit)
+    │
+    ▼
+Collectors (API scraping with Retry & Rate Limiting)
+    │
+    ▼
+Transformers (Source schema → Standard schema)
+    │
+    ▼
+Raw Data Warehouse (Supabase PostgreSQL — jobs table)
+    │
+    ▼ (Incremental Fetch: uncleaned or recently updated)
+Cleaning Layer (Dedup, Location/Skill Normalization, Classification)
+    │
+    ▼
+Analytics Warehouse (Supabase PostgreSQL — jobs_analytics table)
+    │
+    ▼ (Vectorized Data Fetching & Aggregation)
+Streamlit Dashboard (Modular 9-Tab Architecture)
+    │
+    ▼
+Gemini AI Engine (Market-Aware Insights & Q&A)
+```
+
+### Mermaid Architecture Diagram
+
+```mermaid
+flowchart TD
+
+subgraph Data Collection
+    A[Naukri API] --> D[Collectors]
+    B[Foundit API] --> D
+    C[LinkedIn Jobs — Future] -.-> D
+end
+
+subgraph Transformation & Raw Storage
+    D --> E[Raw JSON Storage]
+    D --> F[Transformers]
+    F --> G[(Supabase PostgreSQL — jobs)]
+end
+
+subgraph Incremental ETL Pipeline
+    G -- "Fetch uncleaned/dirty jobs" --> H[Cleaning Layer]
+    H -- "Normalize & Dedup" --> I[(Analytics Warehouse — jobs_analytics)]
+    H -- "Backup" --> J[Local Export — CSV/JSON]
+end
+
+subgraph Presentation & Intelligence
+    I -- "Vectorized queries" --> K[Streamlit Dashboard]
+    J -. "Fallback" .-> K
+    
+    K --> L[📊 Market Overview]
+    K --> M[🔍 Job Explorer]
+    K --> N[📈 Skill Demand]
+    K --> O[📍 Location Analysis]
+    K --> P[💼 Experience Analysis]
+    K --> Q[🏷️ Category Analysis]
+    K --> R[🏢 Company Analysis]
+    K --> S[⚔️ Market Intelligence]
+    K --> T[🤖 AI Insights]
+    
+    T <--> U[Google Gemini API]
+end
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Backend** | Python |
+| **Data Collection** | Requests, curl-cffi |
+| **Data Processing** | Pandas, NumPy |
+| **Database** | PostgreSQL, Supabase |
+| **Dashboard** | Streamlit |
+| **Visualization** | Plotly, Matplotlib, Seaborn |
+| **AI/LLM** | Google Gemini API |
+| **Notebooks** | Jupyter Notebook |
+| **Version Control** | Git, GitHub |
+
+---
+
+## Project Structure
 
 ```text
 career-lens-ai/
-
 │
 ├── collector/
-│   ├── foundit_collector.py
+│   ├── foundit_collector.py       # Foundit API scraper
+│   └── naukri_collector.py        # Naukri API scraper
 │
-├── data/
-│   ├── raw/
-│   ├── processed/
-│
-├── notebooks/
-│
-├── docs/
-│   └── foundit_schema.txt
+├── transformer/
+│   ├── foundit_transformer.py     # Foundit → Standard schema
+│   └── naukri_transformer.py      # Naukri → Standard schema
 │
 ├── cleaning/
+│   └── cleaner.py                 # Dedup, normalize, classify
 │
-├── transformers/
-│
-├── analytics/
+├── database/
+│   ├── schema.sql                 # Raw jobs table DDL
+│   ├── schema_analytics.sql       # Analytics warehouse DDL
+│   └── supabase_client.py         # Supabase API client
 │
 ├── dashboard/
+│   ├── app.py                     # Streamlit dashboard (9 tabs)
+│   └── ai_engine.py               # Gemini AI insight engine
 │
-├── config/
+├── data/
+│   ├── raw/                       # Raw API responses (gitignored)
+│   └── processed/                 # Cleaned CSV/JSON exports
 │
-├── requirements.txt
+├── notebooks/
+│   └── job_market_analysis.ipynb  # Exploratory analysis
 │
+├── docs/
+│   ├── foundit_schema.txt         # API schema reference
+│   └── naukri_schema.txt          # API schema reference
+│
+├── .streamlit/
+│   └── config.toml                # Dashboard theme config
+│
+├── main.py                        # CLI pipeline entry point
+├── requirements.txt               # Python dependencies
+├── .env.example                   # Environment template
 └── README.md
 ```
 
 ---
 
-# Architecture
+## Current Development Stage
 
-## High-Level Architecture
+### Phase 1 ✅ (Completed)
+
+- Foundit API discovery and reverse engineering
+- Naukri API integration
+- Job collector development for both sources
+- Raw JSON storage
+- Schema discovery
+- Supabase integration and initial database loading
+
+### Phase 2 ✅ (Completed)
+
+- Data Cleaning Layer (deduplication, normalization)
+- Location standardization (Bangalore/Bengaluru → Bangalore)
+- Skill normalization (200+ alias mappings)
+- Experience parsing
+- Job category classification (8 categories)
+- HTML stripping from descriptions
+- Local file export (CSV + JSON)
+
+### Phase 3 ✅ (Completed)
+
+- Interactive Streamlit dashboard with 9 tabs
+- Global filter system (keyword, category, city, experience, source)
+- Market Intelligence comparisons (Category vs Category, City vs City)
+- AI Insight engine with Gemini integration
+- Job Explorer for inspecting individual postings
+- Plotly interactive charts with dark theme
+
+### Phase 4 (Planned)
+
+- Resume Scanner
+- Skill Gap Analysis (user skills vs market demand)
+- Resume Match Score
+
+### Phase 5 (Planned)
+
+- Market-Aware Career Roadmap Generator
+- Personalized learning path based on real market data
+
+---
+
+## AI Features Roadmap
+
+CareerLens AI uses a staged approach to adding intelligence:
+
+### AI Layer 1: Market Q&A ✅
+User asks a question → system queries the analytics database → Gemini generates a data-backed answer.
+
+### AI Layer 2: Skill Gap Analysis (Planned)
+User uploads resume → system extracts skills → compares against market demand → generates missing skills report.
+
+### AI Layer 3: Market-Aware Roadmaps (Planned)
+User says "I want to become a Data Scientist" → system uses real market data to generate a learning roadmap ordered by actual demand.
+
+### AI Layer 4: Career Predictor (Planned)
+"Is MLOps worth learning?" → system analyzes trend data → predicts future demand.
+
+### AI Layer 5: Job Market Intelligence Agent (Planned)
+"Compare Data Science vs Data Analytics in India" → agent runs complex queries → generates comprehensive market reports.
+
+### ML Models (When Data Volume Grows)
+
+| Model | When | Purpose |
+|---|---|---|
+| Job Category Classification | 50k+ jobs | Auto-classify new job titles |
+| Salary Prediction | 100k+ jobs | Estimate salary ranges |
+| Demand Forecasting | 6+ months of data | Predict future skill demand |
+
+**Current approach:** SQL + Analytics + Gemini API (no training required).
+
+---
+
+## Workflow
+
+### Step 1: Data Collection
+Collectors fetch job data from Naukri and Foundit APIs with pagination, rate limiting, and retry logic. Raw API responses are saved locally (`data/raw/`) for auditing.
+
+### Step 2: Transformation & Raw Storage
+Source-specific schemas are converted to a unified CareerLens schema. These records are upserted into the Supabase PostgreSQL `jobs` table, utilizing `source` and `source_job_id` to deduplicate incoming data.
+
+### Step 3: Incremental Cleaning & Analytics
+The ETL pipeline intelligently fetches only "uncleaned" or "dirty" jobs (via `cleaned_at` and `updated_at` timestamps). It runs a full cleaning pipeline (fingerprint dedup, location/skill normalization, and job classification) and upserts the results into the `jobs_analytics` table. Stale jobs (not seen recently) are marked inactive.
+
+### Step 4: Streamlit Dashboard
+The dashboard connects directly to Supabase, pulling down analytics data into a Pandas DataFrame. It utilizes **vectorized operations** (like `df.explode()` and `groupby()`) rather than loops to rapidly compute insights across 9 interactive tabs with a robust Plotly layout engine.
+
+### Step 5: AI Insights
+Optional Gemini integration allows for natural language market intelligence queries, grounded completely in the actual, collected job market data.
+
+---
+
+## Future Features
+
+### Resume Intelligence
 
 ```text
-Job Portals
-    │
-    ▼
-Collectors
-    │
-    ▼
-Raw Data Storage
-    │
-    ▼
-Cleaning Layer
-    │
-    ▼
-Transformation Layer
-    │
-    ▼
-Supabase/PostgreSQL
-    │
-    ▼
-Analytics Engine
-    │
-    ▼
-Insights & Recommendations
+Upload Resume → Extract Skills → Compare Against Market → Generate Skill Gap Report
 ```
 
----
-
-# Mermaid Architecture Diagram
-
-```mermaid
-flowchart TD
-
-A[Foundit API]
-B[Indeed API]
-C[LinkedIn Jobs]
-
-A --> D[Collectors]
-B --> D
-C --> D
-
-D --> E[Raw JSON Storage]
-
-E --> F[Data Cleaning Layer]
-
-F --> G[Transformation Layer]
-
-G --> H[(Supabase PostgreSQL)]
-
-H --> I[Analytics Engine]
-
-I --> J[Skill Demand Analysis]
-I --> K[Location Analysis]
-I --> L[Company Analysis]
-I --> M[Experience Analysis]
-
-J --> N[CareerLens Insights]
-K --> N
-L --> N
-M --> N
-```
-
----
-
-# Workflow
-
-## Step 1: Data Collection
-
-The collector fetches job data from job portals.
-
-Example:
-
-```json
-{
-  "title": "AI Engineer",
-  "companyName": "Adobe",
-  "skills": [
-    {
-      "text": "MLflow"
-    }
-  ]
-}
-```
-
----
-
-## Step 2: Raw Storage
-
-Store the original API response without modifications.
-
-Purpose:
-
-- Backup
-- Debugging
-- Reprocessing
-
-Location:
+### Market-Aware Career Roadmap Generator
 
 ```text
-data/raw/
+"I want to become a Data Scientist"
+→ Current Market Demand: Python 82%, SQL 76%, ML 65%, Power BI 42%
+→ Suggested Learning Order: Month 1: Python → Month 2: SQL → Month 3: Statistics → ...
 ```
+
+This is AI powered by actual job market data — not generic internet advice.
 
 ---
 
-## Step 3: Data Cleaning
-
-Handle:
-
-- Missing values
-- Null values
-- Inconsistent skills
-- Invalid locations
-- Incorrect dates
-
-Examples:
-
-```text
-Bangalore
-Bengaluru
-Bengaluru / Bangalore
-```
-
-becomes
-
-```text
-Bengaluru
-```
-
----
-
-## Step 4: Deduplication
-
-Detect duplicate jobs across sources.
-
-Example:
-
-```text
-Adobe - AI Engineer
-```
-
-appearing on:
-
-- Foundit
-- Indeed
-
-Store only one canonical version.
-
----
-
-## Step 5: Transformation
-
-Convert source-specific schema into a common schema.
-
-Example:
-
-### Source Schema
-
-```json
-{
-  "companyName": "Adobe"
-}
-```
-
-### Internal Schema
-
-```json
-{
-  "company": "Adobe"
-}
-```
-
----
-
-## Step 6: Database Storage
-
-Store cleaned records into PostgreSQL.
-
-Example Table:
-
-```sql
-jobs
-```
-
-Columns:
-
-```sql
-id
-title
-company
-location
-salary
-skills
-experience
-posted_date
-source
-```
-
----
-
-## Step 7: Analytics
-
-Perform analysis such as:
-
-### Skill Frequency
-
-```text
-Python      82%
-AWS         60%
-MLflow      41%
-```
-
----
-
-### Location Trends
-
-```text
-Bengaluru   420 jobs
-Hyderabad   310 jobs
-Pune        180 jobs
-```
-
----
-
-### Company Trends
-
-```text
-TCS
-Capgemini
-Adobe
-Accenture
-Infosys
-```
-
----
-
-# Future Features
-
-## Resume Intelligence
-
-Upload Resume
-
-↓
-
-Extract Skills
-
-↓
-
-Compare Against Market
-
-↓
-
-Generate Skill Gap Report
-
----
-
-## AI Career Advisor
-
-Input:
-
-```text
-Current Skills:
-Python
-SQL
-Pandas
-```
-
-Output:
-
-```text
-Most Missing Skills:
-- MLflow
-- AWS
-- LangChain
-- Docker
-```
-
----
-
-# Learning Outcomes
+## Learning Outcomes
 
 This project demonstrates:
 
 ### Data Engineering
-
-- API Integration
+- API Integration and reverse engineering
 - ETL Pipeline Development
-- Data Cleaning
-- Data Validation
+- Data Cleaning and Validation
 - Database Design
 
 ### Data Analysis
-
 - Exploratory Data Analysis
-- Trend Detection
-- Market Intelligence
+- Market Trend Detection
+- Competitive Intelligence
 
-### Software Engineering
-
-- Modular Architecture
-- Scalable Design
-- Production-Oriented Thinking
+### Full-Stack Analytics
+- Interactive Dashboard Development (Streamlit + Plotly)
+- LLM Integration (Gemini API)
+- Modular, production-oriented architecture
 
 ---
 
-# Author
+## Author
 
-Abhishek Yadav
+**Abhishek Yadav**
 
 Data Science Engineer
 

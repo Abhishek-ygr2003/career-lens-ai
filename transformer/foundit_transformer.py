@@ -106,7 +106,7 @@ def transform_single_job(job_dict):
         "description": description,
         "job_url": job_url,
         "posted_at": posted_at,
-        "raw_data": job_dict
+        "raw_data": job_dict,  # Stripped by main.py unless --keep-raw
     }
 
 def transform_jobs(raw_response):

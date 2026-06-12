@@ -2,3 +2,13 @@ requests
 python-dotenv
 supabase
 postgrest
+beautifulsoup4
+pandas
+matplotlib
+seaborn
+jupyter
+curl-cffi
+streamlit
+plotly
+google-genai>=2.8.0
+playwright>=2.8.0
