@@ -103,7 +103,7 @@ def render_market_intelligence(df: pd.DataFrame):
                 height=300
             )
             fig_source.update_layout(**PLOTLY_LAYOUT)
-            st.plotly_chart(fig_source, use_container_width=True)
+            st.plotly_chart(fig_source, width='stretch')
         else:
             st.info("No active volume metrics computed.")
 
@@ -171,12 +171,11 @@ def render_market_intelligence(df: pd.DataFrame):
                             showlegend=False,
                             height=360,
                             **PLOTLY_LAYOUT,
-                            margin=dict(l=10, r=10, t=20, b=10),
                         )
                         fig_field.update_traces(
                             hovertemplate="%{theta}<br>Demand share: %{r}%<extra></extra>"
                         )
-                        st.plotly_chart(fig_field, use_container_width=True)
+                        st.plotly_chart(fig_field, width='stretch')
                     else:
                         st.info("No job_field demand data to plot.")
                 else:
@@ -188,7 +187,11 @@ def render_market_intelligence(df: pd.DataFrame):
         with radar_col2:
             st.markdown("###### 💡 Most Common Skills (Current Demand)")
             hist_records = fetch_skill_demand_history()
+
+            labels, values = [], []
+
             if hist_records:
+                # --- Primary path: use precomputed skill_demand_history table ---
                 hdf = pd.DataFrame(hist_records)
                 if not hdf.empty and {"skill_name", "demand_percentage", "date"}.issubset(set(hdf.columns)):
                     latest_date = pd.to_datetime(hdf["date"], errors="coerce").max()
@@ -205,83 +208,99 @@ def render_market_intelligence(df: pd.DataFrame):
                     labels = top_skills["skill_name"].astype(str).tolist()
                     values = top_skills["demand_percentage"].astype(float).tolist()
 
-                    if values:
-                        fig_skill = go.Figure(
-                            data=[
-                                go.Scatterpolar(
-                                    r=values + [values[0]],
-                                    theta=labels + [labels[0]],
-                                    fill="toself",
-                                    name="Demand index (%)",
-                                    marker=dict(color="#8b5cf6")
-                                )
-                            ]
-                        )
-                        fig_skill.update_layout(
-                            polar=dict(
-                                radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15])
-                            ),
-                            showlegend=False,
-                            height=360,
-                            **PLOTLY_LAYOUT,
-                            margin=dict(l=10, r=10, t=20, b=10),
-                        )
-                        fig_skill.update_traces(
-                            hovertemplate="%{theta}<br>Demand index: %{r}%<extra></extra>"
-                        )
-                        st.plotly_chart(fig_skill, use_container_width=True)
-                    else:
-                        st.info("No skill demand data to plot.")
-                else:
-                    st.info("Skill demand history exists but is missing expected columns.")
-            else:
-                st.info("No skill demand history computed yet.")
+            if not values and not df.empty and "standardized_skills" in df.columns:
+                # --- Fallback: compute live from jobs_analytics df ---
+                skill_series = df["standardized_skills"].dropna()
+                skill_series = skill_series[skill_series.apply(lambda x: isinstance(x, list))]
+                if not skill_series.empty:
+                    all_skills = [s for sublist in skill_series for s in sublist if s]
+                    total_jobs = len(df)
+                    skill_counts = pd.Series(all_skills).value_counts().head(8)
+                    labels = skill_counts.index.astype(str).tolist()
+                    values = (skill_counts.values / total_jobs * 100).round(1).tolist()
+                    st.caption("🟡 Live from current data — run precompute for historical tracking")
 
-        # Radar 3: Future Skills / Emerging Trends (high gap + rising trend)
+            if values:
+                fig_skill = go.Figure(
+                    data=[
+                        go.Scatterpolar(
+                            r=values + [values[0]],
+                            theta=labels + [labels[0]],
+                            fill="toself",
+                            name="Demand index (%)",
+                            marker=dict(color="#8b5cf6")
+                        )
+                    ]
+                )
+                fig_skill.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15])
+                    ),
+                    showlegend=False,
+                    height=360,
+                    **PLOTLY_LAYOUT,
+                    margin=dict(l=10, r=10, t=20, b=10),
+                )
+                fig_skill.update_traces(
+                    hovertemplate="%{theta}<br>Demand index: %{r:.1f}%<extra></extra>"
+                )
+                st.plotly_chart(fig_skill, use_container_width=True)
+            else:
+                st.info("No skill data available to plot.")
+
+        # Radar 3: Future Skills / Emerging Trends
         with radar_col3:
             st.markdown("###### 🔮 Future Skills & Emerging Trends")
             st.caption("Skills with high talent gaps (demand > supply) & rising demand — signals for next 2-3 years")
-            
-            # Reuse cached gap analysis (fetched once at top of render_market_intelligence)
+
+            # Reuse cached gap analysis
             gap_records = gap_records_all
             hist_records = fetch_skill_demand_history()
-            
+
             future_labels = []
             future_values = []
-            
+
             if gap_records and hist_records:
+                # --- Primary path: precomputed gap + history ---
                 gap_df = pd.DataFrame(gap_records)
                 hist_df = pd.DataFrame(hist_records)
-                
-                # Get latest gap snapshot
+
                 latest_gap_date = gap_df["date"].max()
                 gap_latest = gap_df[gap_df["date"] == latest_gap_date].copy()
-                
-                # Get skills with significant talent shortage (gap > 5)
                 shortage_skills = gap_latest[gap_latest["gap_score"] > 5].sort_values("gap_score", ascending=False)
-                
-                # Calculate trend (growth rate) from historical data for these skills
+
                 if not shortage_skills.empty and not hist_df.empty:
                     skill_trends = {}
                     for skill in shortage_skills["skill_name"].unique():
                         skill_hist = hist_df[hist_df["skill_name"] == skill].sort_values("date")
                         if len(skill_hist) >= 2:
-                            # Calculate simple growth rate: (latest - earliest) / earliest
                             first_val = skill_hist.iloc[0]["demand_percentage"]
                             last_val = skill_hist.iloc[-1]["demand_percentage"]
                             if first_val > 0:
                                 growth = ((last_val - first_val) / first_val) * 100
                                 skill_trends[skill] = growth
-                    
-                    # Combine gap score + trend for future priority score
+
                     shortage_skills = shortage_skills.copy()
                     shortage_skills["trend_growth"] = shortage_skills["skill_name"].map(skill_trends).fillna(0)
                     shortage_skills["future_score"] = shortage_skills["gap_score"] + (shortage_skills["trend_growth"].clip(0, 50) * 0.5)
-                    
+
                     top_future = shortage_skills.sort_values("future_score", ascending=False).head(8)
                     future_labels = top_future["skill_name"].astype(str).tolist()
                     future_values = top_future["future_score"].astype(float).tolist()
-            
+
+            if not future_labels and not df.empty and "standardized_skills" in df.columns:
+                # --- Fallback: top demanded skills from df as a demand-priority proxy ---
+                skill_series = df["standardized_skills"].dropna()
+                skill_series = skill_series[skill_series.apply(lambda x: isinstance(x, list))]
+                if not skill_series.empty:
+                    all_skills = [s for sublist in skill_series for s in sublist if s]
+                    total_jobs = len(df)
+                    skill_counts = pd.Series(all_skills).value_counts().head(8)
+                    future_labels = skill_counts.index.astype(str).tolist()
+                    # Express as demand % — honest proxy until precompute runs
+                    future_values = (skill_counts.values / total_jobs * 100).round(1).tolist()
+                    st.caption("🟡 Showing demand share — run precompute_analytics.py for gap + trend scoring")
+
             if future_labels and future_values:
                 fig_future = go.Figure(
                     data=[
@@ -289,7 +308,7 @@ def render_market_intelligence(df: pd.DataFrame):
                             r=future_values + [future_values[0]],
                             theta=future_labels + [future_labels[0]],
                             fill="toself",
-                            name="Future Priority Score",
+                            name="Priority Score",
                             marker=dict(color="#f59e0b")
                         )
                     ]
@@ -304,11 +323,11 @@ def render_market_intelligence(df: pd.DataFrame):
                     margin=dict(l=10, r=10, t=20, b=10),
                 )
                 fig_future.update_traces(
-                    hovertemplate="%{theta}<br>Future Priority: %{r:.0f}<extra></extra>"
+                    hovertemplate="%{theta}<br>Score: %{r:.1f}<extra></extra>"
                 )
                 st.plotly_chart(fig_future, use_container_width=True)
             else:
-                st.info("Insufficient gap/history data to compute future skills radar.")
+                st.info("No skill data available to compute this radar.")
                 
     # ─────────────────────────────────────────────────────────
     # SUB-TAB 2: Skill Gap Engine
@@ -363,7 +382,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     )
                     fig_short.update_layout(**PLOTLY_LAYOUT)
                     fig_short.update_yaxes(autorange="reversed")
-                    st.plotly_chart(fig_short, use_container_width=True)
+                    st.plotly_chart(fig_short, width='stretch')
                 else:
                     st.info("No major skill shortages computed.")
                     
@@ -377,7 +396,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_surp.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_surp, use_container_width=True)
+                    st.plotly_chart(fig_surp, width='stretch')
                 else:
                     st.info("No major saturated skills computed.")
                     
@@ -462,7 +481,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     height=400, line_shape="spline"
                 )
                 fig_trend.update_layout(**PLOTLY_LAYOUT)
-                st.plotly_chart(fig_trend, use_container_width=True)
+                st.plotly_chart(fig_trend, width='stretch')
             else:
                 st.info("Select one or more technologies to plot trendlines.")
         else:
@@ -494,7 +513,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_fsal.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_fsal, use_container_width=True)
+                    st.plotly_chart(fig_fsal, width='stretch')
                 else:
                     st.info("No salary insights by job field available.")
                     
@@ -509,7 +528,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_csal.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_csal, use_container_width=True)
+                    st.plotly_chart(fig_csal, width='stretch')
                 else:
                     st.info("No salary insights by city available.")
                     
@@ -526,7 +545,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     height=300
                 )
                 fig_ssal.update_layout(**PLOTLY_LAYOUT)
-                st.plotly_chart(fig_ssal, use_container_width=True)
+                st.plotly_chart(fig_ssal, width='stretch')
             else:
                 st.info("No salary insights by skill available.")
         else:
@@ -586,7 +605,7 @@ def render_market_intelligence(df: pd.DataFrame):
                 st.markdown(st.session_state["_ai_last_response"])
                 st.divider()
 
-            if st.button("🚀 Generate Personalized Strategy", use_container_width=True):
+            if st.button("🚀 Generate Personalized Strategy", width='stretch'):
                 with st.spinner("Analyzing market data & generating strategy..."):
                     # 1. Gather dynamic labor context
                     # Get top demanded skills from precomputations
