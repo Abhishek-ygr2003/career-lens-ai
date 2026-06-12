@@ -30,7 +30,7 @@ def render_market_intelligence(df: pd.DataFrame):
     st.markdown("### 🧠 Labor Market Intelligence & AI Career Advisor")
     st.markdown(
         "<p style='color:var(--text-mid);font-size:0.92rem;margin-top:-14px'>"
-        "Sourced from daily job board collection (Naukri, Foundit, Adzuna) and precomputed analytics history. No hardcoded or fake statistics."
+        "Sourced from daily job board collection (Naukri, Foundit, Adzuna) and precomputed analytics history."
         "</p>",
         unsafe_allow_html=True,
     )
@@ -51,6 +51,12 @@ def render_market_intelligence(df: pd.DataFrame):
     # ─────────────────────────────────────────────────────────
     # SUB-TAB 1: Overview & Freshness
     # ─────────────────────────────────────────────────────────
+    # Cache the gap analysis for "all" stream — used in both radar_col3 and the AI Advisor
+    if "_gap_records_all" not in st.session_state:
+        with st.spinner("Loading skill gap data..."):
+            st.session_state["_gap_records_all"] = fetch_skill_gap_analysis("all")
+    gap_records_all = st.session_state["_gap_records_all"]
+
     with sub_tabs[0]:
         st.markdown("#### 📈 Market Data Status & Pipeline Health")
         st.caption("Freshness, sources coverage, and scale of the labor market data lake.")
@@ -97,7 +103,7 @@ def render_market_intelligence(df: pd.DataFrame):
                 height=300
             )
             fig_source.update_layout(**PLOTLY_LAYOUT)
-            st.plotly_chart(fig_source, width="stretch")
+            st.plotly_chart(fig_source, use_container_width=True)
         else:
             st.info("No active volume metrics computed.")
 
@@ -146,30 +152,33 @@ def render_market_intelligence(df: pd.DataFrame):
                     labels = field_share.index.astype(str).tolist()
                     values = field_share.values.tolist()
 
-                    fig_field = go.Figure(
-                        data=[
-                            go.Scatterpolar(
-                                r=values + [values[0]] if values else values,
-                                theta=labels + [labels[0]] if labels else labels,
-                                fill="toself",
-                                name="Demand share (%)",
-                                marker=dict(color="#3b82f6")
-                            )
-                        ]
-                    )
-                    fig_field.update_layout(
-                        polar=dict(
-                            radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15 if values else 100])
-                        ),
-                        showlegend=False,
-                        height=360,
-                        **PLOTLY_LAYOUT,
-                        margin=dict(l=10, r=10, t=20, b=10),
-                    )
-                    fig_field.update_traces(
-                        hovertemplate="%{theta}<br>Demand share: %{r}%<extra></extra>"
-                    )
-                    st.plotly_chart(fig_field, use_container_width=True)
+                    if values:
+                        fig_field = go.Figure(
+                            data=[
+                                go.Scatterpolar(
+                                    r=values + [values[0]],
+                                    theta=labels + [labels[0]],
+                                    fill="toself",
+                                    name="Demand share (%)",
+                                    marker=dict(color="#3b82f6")
+                                )
+                            ]
+                        )
+                        fig_field.update_layout(
+                            polar=dict(
+                                radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15])
+                            ),
+                            showlegend=False,
+                            height=360,
+                            **PLOTLY_LAYOUT,
+                            margin=dict(l=10, r=10, t=20, b=10),
+                        )
+                        fig_field.update_traces(
+                            hovertemplate="%{theta}<br>Demand share: %{r}%<extra></extra>"
+                        )
+                        st.plotly_chart(fig_field, use_container_width=True)
+                    else:
+                        st.info("No job_field demand data to plot.")
                 else:
                     st.info("No job_field demand data in the latest snapshot.")
             else:
@@ -196,30 +205,33 @@ def render_market_intelligence(df: pd.DataFrame):
                     labels = top_skills["skill_name"].astype(str).tolist()
                     values = top_skills["demand_percentage"].astype(float).tolist()
 
-                    fig_skill = go.Figure(
-                        data=[
-                            go.Scatterpolar(
-                                r=values + [values[0]] if values else values,
-                                theta=labels + [labels[0]] if labels else labels,
-                                fill="toself",
-                                name="Demand index (%)",
-                                marker=dict(color="#8b5cf6")
-                            )
-                        ]
-                    )
-                    fig_skill.update_layout(
-                        polar=dict(
-                            radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15 if values else 100])
-                        ),
-                        showlegend=False,
-                        height=360,
-                        **PLOTLY_LAYOUT,
-                        margin=dict(l=10, r=10, t=20, b=10),
-                    )
-                    fig_skill.update_traces(
-                        hovertemplate="%{theta}<br>Demand index: %{r}%<extra></extra>"
-                    )
-                    st.plotly_chart(fig_skill, use_container_width=True)
+                    if values:
+                        fig_skill = go.Figure(
+                            data=[
+                                go.Scatterpolar(
+                                    r=values + [values[0]],
+                                    theta=labels + [labels[0]],
+                                    fill="toself",
+                                    name="Demand index (%)",
+                                    marker=dict(color="#8b5cf6")
+                                )
+                            ]
+                        )
+                        fig_skill.update_layout(
+                            polar=dict(
+                                radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(values) * 1.15])
+                            ),
+                            showlegend=False,
+                            height=360,
+                            **PLOTLY_LAYOUT,
+                            margin=dict(l=10, r=10, t=20, b=10),
+                        )
+                        fig_skill.update_traces(
+                            hovertemplate="%{theta}<br>Demand index: %{r}%<extra></extra>"
+                        )
+                        st.plotly_chart(fig_skill, use_container_width=True)
+                    else:
+                        st.info("No skill demand data to plot.")
                 else:
                     st.info("Skill demand history exists but is missing expected columns.")
             else:
@@ -230,8 +242,8 @@ def render_market_intelligence(df: pd.DataFrame):
             st.markdown("###### 🔮 Future Skills & Emerging Trends")
             st.caption("Skills with high talent gaps (demand > supply) & rising demand — signals for next 2-3 years")
             
-            # Get gap analysis for future signals
-            gap_records = fetch_skill_gap_analysis("all")
+            # Reuse cached gap analysis (fetched once at top of render_market_intelligence)
+            gap_records = gap_records_all
             hist_records = fetch_skill_demand_history()
             
             future_labels = []
@@ -270,7 +282,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     future_labels = top_future["skill_name"].astype(str).tolist()
                     future_values = top_future["future_score"].astype(float).tolist()
             
-            if future_labels:
+            if future_labels and future_values:
                 fig_future = go.Figure(
                     data=[
                         go.Scatterpolar(
@@ -284,7 +296,7 @@ def render_market_intelligence(df: pd.DataFrame):
                 )
                 fig_future.update_layout(
                     polar=dict(
-                        radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(future_values) * 1.15 if future_values else 100])
+                        radialaxis=dict(visible=True, tickformat=".0f", range=[0, max(future_values) * 1.15])
                     ),
                     showlegend=False,
                     height=360,
@@ -323,8 +335,13 @@ def render_market_intelligence(df: pd.DataFrame):
         }
         stream_code = stream_map[stream_opt]
         
-        # Load gap records
-        gap_records = fetch_skill_gap_analysis(stream_code)
+        # Load gap records (use cached 'all' result when stream is 'all', otherwise fetch)
+        with st.spinner("Loading skill gap data..."):
+            gap_records = (
+                gap_records_all
+                if stream_code == "all"
+                else fetch_skill_gap_analysis(stream_code)
+            )
         
         if gap_records:
             # Get latest date snapshot
@@ -346,7 +363,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     )
                     fig_short.update_layout(**PLOTLY_LAYOUT)
                     fig_short.update_yaxes(autorange="reversed")
-                    st.plotly_chart(fig_short, width="stretch")
+                    st.plotly_chart(fig_short, use_container_width=True)
                 else:
                     st.info("No major skill shortages computed.")
                     
@@ -360,7 +377,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_surp.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_surp, width="stretch")
+                    st.plotly_chart(fig_surp, use_container_width=True)
                 else:
                     st.info("No major saturated skills computed.")
                     
@@ -424,7 +441,8 @@ def render_market_intelligence(df: pd.DataFrame):
         st.markdown("#### 📈 Emerging Technology Demand Trends")
         st.caption("Track historical skill demand indices to locate emerging/declining tech.")
         
-        hist_records = fetch_skill_demand_history()
+        with st.spinner("Loading demand history..."):
+            hist_records = fetch_skill_demand_history()
         
         if hist_records:
             hist_df = pd.DataFrame(hist_records)
@@ -444,7 +462,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     height=400, line_shape="spline"
                 )
                 fig_trend.update_layout(**PLOTLY_LAYOUT)
-                st.plotly_chart(fig_trend, width="stretch")
+                st.plotly_chart(fig_trend, use_container_width=True)
             else:
                 st.info("Select one or more technologies to plot trendlines.")
         else:
@@ -457,7 +475,8 @@ def render_market_intelligence(df: pd.DataFrame):
         st.markdown("#### 💰 Salary Intelligence & Benchmarks")
         st.caption("Precomputed median salary indicators based on active vacancies.")
         
-        sal_records = fetch_salary_insights()
+        with st.spinner("Loading salary data..."):
+            sal_records = fetch_salary_insights()
         
         if sal_records:
             sal_df = pd.DataFrame(sal_records)
@@ -475,7 +494,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_fsal.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_fsal, width="stretch")
+                    st.plotly_chart(fig_fsal, use_container_width=True)
                 else:
                     st.info("No salary insights by job field available.")
                     
@@ -490,7 +509,7 @@ def render_market_intelligence(df: pd.DataFrame):
                         height=250
                     )
                     fig_csal.update_layout(**PLOTLY_LAYOUT)
-                    st.plotly_chart(fig_csal, width="stretch")
+                    st.plotly_chart(fig_csal, use_container_width=True)
                 else:
                     st.info("No salary insights by city available.")
                     
@@ -507,7 +526,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     height=300
                 )
                 fig_ssal.update_layout(**PLOTLY_LAYOUT)
-                st.plotly_chart(fig_ssal, width="stretch")
+                st.plotly_chart(fig_ssal, use_container_width=True)
             else:
                 st.info("No salary insights by skill available.")
         else:
@@ -550,7 +569,24 @@ def render_market_intelligence(df: pd.DataFrame):
                 adv_skills = st.text_input("Your current skills (comma separated):", placeholder="e.g. Python, SQL, Excel, communication")
                 adv_goal = st.text_input("Career Goals or specific question:", placeholder="e.g. I want to secure a product PM role in Bangalore")
                 
-            if st.button("🚀 Generate Personalized Strategy", width="stretch"):
+            # Warn user if market data context is missing before they hit Generate
+            _demand_preview = st.session_state.get("_gap_records_all")
+            if not _demand_preview:
+                st.warning(
+                    "⚠️ **Market data not yet computed.** "
+                    "The AI advisor will produce general guidance without live market grounding. "
+                    "Run the ingestion pipeline first for best results.",
+                    icon="⚠️",
+                )
+
+            # Show last AI response if it exists (persists across reruns)
+            if "_ai_last_response" in st.session_state:
+                st.markdown("##### 📋 Last Generated Strategy")
+                st.info("ℹ️ This is your last generated response. Hit Generate again to refresh.")
+                st.markdown(st.session_state["_ai_last_response"])
+                st.divider()
+
+            if st.button("🚀 Generate Personalized Strategy", use_container_width=True):
                 with st.spinner("Analyzing market data & generating strategy..."):
                     # 1. Gather dynamic labor context
                     # Get top demanded skills from precomputations
@@ -562,32 +598,33 @@ def render_market_intelligence(df: pd.DataFrame):
                         top_demands = h_df[h_df["date"] == latest_date].sort_values("demand_percentage", ascending=False).head(8)
                         top_demands_str = ", ".join([f"{r['skill_name']} ({r['demand_percentage']}% of jobs)" for _, r in top_demands.iterrows()])
                         
-                    # Get dynamic shortages
-                    gap_data = fetch_skill_gap_analysis("all")
-                    top_gaps_str = "None"
-                    if gap_data:
-                        g_df = pd.DataFrame(gap_data)
+                    # Get dynamic shortages (reuse cached result)
+                    top_gaps_str = "Not available — run the ingestion pipeline to compute gap data."
+                    if gap_records_all:
+                        g_df = pd.DataFrame(gap_records_all)
                         latest_date = g_df["date"].max()
                         top_gaps = g_df[(g_df["date"] == latest_date) & (g_df["gap_score"] > 5)].sort_values("gap_score", ascending=False).head(5)
-                        top_gaps_str = ", ".join([f"{r['skill_name']} (Talent Gap: +{r['gap_score']} pp)" for _, r in top_gaps.iterrows()])
+                        if not top_gaps.empty:
+                            top_gaps_str = ", ".join([f"{r['skill_name']} (Talent Gap: +{r['gap_score']} pp)" for _, r in top_gaps.iterrows()])
                         
                     # Get top hiring locations
                     loc_data = fetch_location_insights()
-                    top_locs_str = "Bangalore, Mumbai, Delhi"
+                    top_locs_str = "Not available — no location data computed yet."
                     if loc_data:
                         l_df = pd.DataFrame(loc_data)
                         latest_date = l_df["date"].max()
                         top_locs = l_df[l_df["date"] == latest_date].sort_values("job_count", ascending=False).head(5)
-                        top_locs_str = ", ".join([f"{r['city']} ({r['job_count']} listings)" for _, r in top_locs.iterrows()])
+                        if not top_locs.empty:
+                            top_locs_str = ", ".join([f"{r['city']} ({r['job_count']} listings)" for _, r in top_locs.iterrows()])
                         
                     # Get median salary indicators
                     sal_data = fetch_salary_insights()
-                    salary_str = "Median fresher package: ₹4.5L - ₹6L per annum."
+                    salary_str = "Not available — no salary data computed yet."
                     if sal_data:
                         s_df = pd.DataFrame(sal_data)
                         skill_sal = s_df[s_df["skill_name"].notna()].sort_values("median_salary", ascending=False).head(3)
                         if not skill_sal.empty:
-                            salary_str = "Top paying precomputed skillsets: " + ", ".join([f"{r['skill_name']} (median: ₹{r['median_salary']/100000:.1f}L)" for _, r in skill_sal.iterrows()])
+                            salary_str = "Top paying skills by median salary: " + ", ".join([f"{r['skill_name']} (median: ₹{r['median_salary']/100000:.1f}L)" for _, r in skill_sal.iterrows()])
                             
                     # Construct Gemini Prompt
                     prompt = f"""You are a top-tier labor market analyst and career strategist.
@@ -599,22 +636,22 @@ def render_market_intelligence(df: pd.DataFrame):
                     - Current Skills: {adv_skills or "None specified"}
                     - Career Goals: {adv_goal or "Secure a high-paying role"}
 
-                    LIVE INDIAN LABOR MARKET CONTEXT (REAL DATA):
+                    LIVE INDIAN LABOR MARKET CONTEXT (sourced from pipeline — use only what is available):
                     - Top Demanded Skills: {top_demands_str}
-                    - Top Skill Shortages: {top_gaps_str}
+                    - Top Skill Shortages (Demand > Supply): {top_gaps_str}
                     - Top Hiring Locations: {top_locs_str}
                     - Salary Benchmarks: {salary_str}
-                    - NASSCOM: 51% talent gap in AI/ML (demand 629K, supply 416K). DevOps & Cloud skills see 60%+ shortage gap.
-                    - Naukri JobSpeak: AI/ML hiring +25% YoY; Senior hiring stable. Insurance, real estate hiring freshers.
+
+                    Important: If any data field above says "Not available", do NOT fabricate numbers or cite external reports. Acknowledge the gap and reason from first principles.
 
                     Provide the following sections:
                     1. **Blunt Market Assessment (1-2 paragraphs)**: Analyze the student's competitive position in their field. Address saturation vs shortages directly.
                     2. **Top 3 Skills to Acquire**: Target the dynamic talent shortages above. Provide justification.
-                    3. **6-Month Milestones Plan**: Standard month-by-month actionable checklist. Suggest free/cheap courses or resources (NPTEL, Kaggle, Coursera auditing).
-                    4. **Realistic Salary range (INR)**: Benchmark ranges based on current city/experience data.
-                    5. **Contrarian Insight**: One advice most students hear that is actually wrong about this specific market right now.
+                    3. **6-Month Milestones Plan**: Month-by-month actionable checklist. Suggest free/affordable resources (NPTEL, Kaggle, Coursera audit mode).
+                    4. **Realistic Salary Range (INR)**: Benchmark ranges based on available data. If no salary data is available, state that clearly.
+                    5. **Contrarian Insight**: One piece of advice most students hear that is actually wrong for this specific market right now.
 
-                    Avoid corporate buzzwords, generic advice, or placeholders. Speak like a real analyst.
+                    Avoid corporate buzzwords, generic advice, or invented statistics. Speak like a real analyst.
                     """
                     
                     # Invoke Gemini
@@ -630,12 +667,9 @@ def render_market_intelligence(df: pd.DataFrame):
                     except Exception as e:
                         response_text = f"Failed to connect to Gemini API: {e}"
                         
+                    # Persist response so user can scroll back after reruns
+                    st.session_state["_ai_last_response"] = response_text
+
                     st.markdown("##### 🚀 Your Customized Labor Strategy Roadmap")
-                    st.markdown(
-                        f"""
-                        <div class="ai-response">
-                            {response_text.replace(chr(10), '<br>').replace('**', '<b>')}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    # Gemini returns markdown — render it natively; no manual HTML escaping needed
+                    st.markdown(response_text)
