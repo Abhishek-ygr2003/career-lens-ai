@@ -70,7 +70,7 @@ def clear_supabase_tables():
     tables = [
         "jobs_analytics", "jobs", "collection_runs", "job_skills", 
         "skill_demand_history", "skill_gap_analysis", "salary_insights", 
-        "location_insights", "company_hiring_stats"
+        "location_insights", "company_hiring_stats", "job_events", "crawl_state"
     ]
     
     for table in tables:
@@ -88,8 +88,27 @@ def clear_supabase_tables():
     print("  Database clearing step completed.")
     print("="*60 + "\n")
 
-def run_keyword_pipeline(keyword: str, source: str, max_pages: int, keep_raw: bool, dry_run: bool):
+def run_keyword_pipeline(keyword: str, domain: str, source: str, max_pages: int, keep_raw: bool, dry_run: bool):
     """Run main.py collection + cleaning for a specific keyword in a separate process."""
+    
+    # Add project root to python path to import database modules
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    
+    state = None
+    if not dry_run:
+        try:
+            from database.supabase_client import fetch_crawl_state, update_crawl_state
+            # Fetch last known crawl state
+            state = fetch_crawl_state(source, domain, keyword)
+            if state:
+                print(f"\n[CRAWL STATE] Found previous run details:")
+                print(f"  Last Run   : {state.get('last_run')}")
+                print(f"  Last Page  : {state.get('last_page')}")
+                print(f"  Last Status: {state.get('status')}")
+                print(f"  Error Count: {state.get('error_count')}")
+        except Exception as e:
+            print(f"[!] Warning: Could not fetch crawl state: {e}")
+
     cmd = [
         sys.executable,
         "main.py",
@@ -109,6 +128,25 @@ def run_keyword_pipeline(keyword: str, source: str, max_pages: int, keep_raw: bo
     # Run process and stream stdout to console
     try:
         result = subprocess.run(cmd, check=False)
+        status = "success" if result.returncode == 0 else "failed"
+        
+        # Update crawl state
+        if not dry_run:
+            try:
+                error_cnt = (state.get("error_count", 0) if state else 0)
+                if status == "failed":
+                    error_cnt += 1
+                update_crawl_state(
+                    source=source,
+                    domain=domain,
+                    keyword=keyword,
+                    last_page=max_pages or 1,
+                    status=status,
+                    error_count=error_cnt
+                )
+            except Exception as se:
+                print(f"[!] Warning: Could not update crawl state: {se}")
+
         if result.returncode != 0:
             print(f"[!] WARNING: Pipeline for '{keyword}' failed with exit code {result.returncode}.")
             return False
@@ -116,6 +154,19 @@ def run_keyword_pipeline(keyword: str, source: str, max_pages: int, keep_raw: bo
         return True
     except Exception as e:
         print(f"[!] ERROR executing pipeline for '{keyword}': {e}")
+        if not dry_run:
+            try:
+                error_cnt = (state.get("error_count", 0) if state else 0) + 1
+                update_crawl_state(
+                    source=source,
+                    domain=domain,
+                    keyword=keyword,
+                    last_page=max_pages or 1,
+                    status="failed",
+                    error_count=error_cnt
+                )
+            except Exception:
+                pass
         return False
 
 def main():
@@ -136,9 +187,9 @@ def main():
         help="Max pages to fetch per keyword per source (default: 3, which is ~120 jobs per keyword)."
     )
     parser.add_argument(
-        "--no-clear",
+        "--clear",
         action="store_true",
-        help="Skip clearing database tables before starting the ingestion."
+        help="Force clear database tables before starting the ingestion (Defaults to False)."
     )
     parser.add_argument(
         "--keep-raw",
@@ -171,15 +222,15 @@ def main():
     print("="*60)
     print(f"  Ingestion Source     : {args.source}")
     print(f"  Max pages per search : {args.max_pages}")
-    print(f"  Clear Database       : {not args.no_clear}")
+    print(f"  Clear Database       : {args.clear}")
     print(f"  Dry Run mode         : {args.dry_run}")
     print(f"  Cooldown delay       : {args.cooldown}s")
     print("="*60 + "\n")
 
     # Step 1: Clear Database if requested and not in dry-run mode
-    if not args.no_clear and not args.dry_run:
+    if args.clear and not args.dry_run:
         clear_supabase_tables()
-    elif args.dry_run and not args.no_clear:
+    elif args.dry_run and args.clear:
         print("Dry run active — skipping database clearing.")
 
     # Determine which domains to process
@@ -209,6 +260,7 @@ def main():
                 
             success = run_keyword_pipeline(
                 keyword=keyword,
+                domain=domain,
                 source=args.source,
                 max_pages=args.max_pages,
                 keep_raw=args.keep_raw,

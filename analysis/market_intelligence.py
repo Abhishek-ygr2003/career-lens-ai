@@ -238,8 +238,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     ),
                     showlegend=False,
                     height=360,
-                    **PLOTLY_LAYOUT,
-                    margin=dict(l=10, r=10, t=20, b=10),
+                    **{**PLOTLY_LAYOUT, "margin": dict(l=10, r=10, t=20, b=10)},
                 )
                 fig_skill.update_traces(
                     hovertemplate="%{theta}<br>Demand index: %{r:.1f}%<extra></extra>"
@@ -319,8 +318,7 @@ def render_market_intelligence(df: pd.DataFrame):
                     ),
                     showlegend=False,
                     height=360,
-                    **PLOTLY_LAYOUT,
-                    margin=dict(l=10, r=10, t=20, b=10),
+                    **{**PLOTLY_LAYOUT, "margin": dict(l=10, r=10, t=20, b=10)},
                 )
                 fig_future.update_traces(
                     hovertemplate="%{theta}<br>Score: %{r:.1f}<extra></extra>"

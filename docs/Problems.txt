@@ -1,0 +1,287 @@
+Problem 1: Manual data collection will never scale
+
+Current:
+
+You
+ |
+Run Naukri
+ |
+Collect 5 pages
+ |
+Clean
+ |
+Update analytics
+ |
+Run Foundit
+ |
+Clean
+ |
+Run Adzuna
+ |
+Repeat
+
+This is a developer workflow.
+
+A production workflow should look like:
+
+Scheduler
+    |
+    |
+Job Collection Queue
+    |
+    +---- Naukri Worker
+    |
+    +---- Foundit Worker
+    |
+    +---- Adzuna Worker
+    |
+Raw Jobs Database
+    |
+ETL Cleaning Worker
+    |
+Analytics Warehouse
+    |
+Precompute Jobs
+    |
+Dashboard
+Problem 2: The "5 pages" limitation
+
+This is a classic crawler problem.
+
+You probably don't actually need every single job every day.
+
+Think like a data engineer.
+
+Option A — Rolling collection (recommended)
+
+Example:
+
+Monday:
+Data Science
+Naukri pages 1-20
+
+Tuesday:
+Software Engineering
+Naukri pages 1-20
+
+Wednesday:
+Cybersecurity
+Naukri pages 1-20
+
+Then repeat with Foundit.
+
+Over a week:
+
+Naukri
++
+Foundit
++
+Adzuna
++
+5 domains
++
+many keywords
+
+You slowly build a large dataset.
+
+Problem 3: Job lifecycle management
+
+This is the biggest design challenge.
+
+Your idea:
+
+Remove closed jobs but keep historical counts
+
+is exactly the right direction.
+
+Never physically delete data.
+
+You need a job lifecycle.
+
+Your jobs table should have something like:
+
+job_id
+
+source
+
+source_job_id
+
+first_seen
+
+last_seen
+
+is_active
+
+closed_at
+
+collection_count
+
+Example:
+
+Day 1:
+
+Google
+Data Scientist
+
+first_seen:
+June 1
+
+last_seen:
+June 1
+
+active:
+True
+
+Day 15:
+
+Still exists:
+
+last_seen:
+June 15
+
+active:
+True
+
+Day 30:
+
+Not found anymore:
+
+active:
+False
+
+closed_at:
+June 30
+
+But you keep the record.
+
+Because now your analytics can answer:
+
+How many Data Scientist jobs were posted in June?
+Which companies hired the most in 2026?
+Which fields are growing month-over-month?
+Average job lifetime?
+
+This is very valuable data.
+
+Problem 4: Monthly market history
+
+I actually think your architecture should evolve.
+
+Currently:
+
+jobs_analytics
+      |
+precompute
+      |
+skill_history
+salary_history
+
+Eventually you may need:
+
+jobs_current
+        |
+        |
+job_events
+        |
+        |
+monthly_market_snapshot
+
+Something like:
+
+job_events
+
+job_id
+event_type
+date
+
+
+Example:
+
+1234 CREATED 2026-06-01
+1234 UPDATED 2026-06-10
+1234 CLOSED 2026-06-30
+
+This is called an event-driven history model.
+
+Problem 5: You need a scheduler
+
+Eventually:
+
+Every few hours:
+
+Naukri collector
+Foundit collector
+Adzuna collector
+
+Once per day:
+
+Cleaner
+Deduplication
+Classification
+Analytics precompute
+
+Once per month:
+
+Create market snapshot
+Archive statistics
+Problem 6: Rate limits and anti-bot
+
+This is where your architecture matters.
+
+Do not do:
+
+for source in sources:
+    for domain in domains:
+        for keyword in keywords:
+            scrape 100 pages
+
+You will get blocked.
+
+Better:
+
+Task Queue
+
+
+Naukri + Data Scientist page 1
+
+wait
+
+Foundit + Data Scientist page 1
+
+wait
+
+Adzuna + Data Scientist page 1
+
+wait
+
+Spread requests over time.
+
+Problem 7: Your data model is slowly moving toward a real warehouse
+
+Right now:
+
+jobs
+ |
+jobs_analytics
+ |
+analytics tables
+
+V1 might look more like:
+
+               Sources
+                  |
+              Collectors
+                  |
+             Raw Jobs
+                  |
+            Clean Jobs
+                  |
+       Job History / Events
+                  |
+          Fact Tables
+                  |
+        Analytics Snapshots
+                  |
+          AI Intelligence
+
+At this point you are entering data engineering architecture.

@@ -33,7 +33,6 @@ from database.supabase_client import (
     fetch_uncleaned_jobs,
     mark_jobs_cleaned,
     mark_stale_jobs,
-    fetch_known_job_ids,
     fetch_all_analytics,
     upsert_analytics,
     log_collection_run,
@@ -229,17 +228,8 @@ def run_collection(source: str, keyword: str, dry_run: bool, keep_raw: bool = Fa
             for job in transformed_jobs:
                 job.pop("raw_data", None)
 
-        # ── Pre-filter: skip already-known job IDs ────────────
+        # Deduplication and insertion is handled directly in PostgreSQL via ON CONFLICT
         jobs_new = total_transformed
-        if not dry_run:
-            known_ids = fetch_known_job_ids(source)
-            if known_ids:
-                new_jobs = [j for j in transformed_jobs if j.get("source_job_id") not in known_ids]
-                existing_jobs = [j for j in transformed_jobs if j.get("source_job_id") in known_ids]
-                jobs_new = len(new_jobs)
-                print(f"  Pre-filter: {jobs_new} new jobs, {len(existing_jobs)} already known.")
-            else:
-                print("  Pre-filter: no existing jobs found (fresh DB or new source).")
 
         # Load or dry-run
         if dry_run:

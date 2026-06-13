@@ -6,7 +6,7 @@
 
 ## Overview
 
-CareerLens AI is a **Job Market Intelligence System** that helps AI/ML/Data Science professionals understand the real hiring landscape using live job data collected from multiple job portals across India.
+CareerLens AI is a **Job Market Intelligence System** that helps students and professionals understand the real hiring landscape using live job market data collected from multiple job portals across India.
 
 Instead of relying on generic career advice, CareerLens AI:
 

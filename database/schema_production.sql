@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     cleaned_at TIMESTAMPTZ DEFAULT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+    closed_at TIMESTAMPTZ DEFAULT NULL,
 
     CONSTRAINT unique_source_job UNIQUE (source, source_job_id)
 );
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS jobs_analytics (
     company_logo_url    TEXT,
     is_active           BOOLEAN DEFAULT TRUE,
     last_seen_at        TIMESTAMPTZ DEFAULT NOW(),
+    closed_at           TIMESTAMPTZ DEFAULT NULL,
     search_keywords     TEXT[] DEFAULT '{}',
     posted_at           TIMESTAMPTZ,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -134,12 +136,14 @@ CREATE INDEX IF NOT EXISTS idx_sga_skill_stream ON skill_gap_analysis(skill_name
 -- 6. SALARY INSIGHTS (Median salary trends)
 CREATE TABLE IF NOT EXISTS salary_insights (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    skill_name VARCHAR(100),
-    job_field VARCHAR(100),
-    city VARCHAR(100),
-    exp_level VARCHAR(50),
+    skill_name VARCHAR(100) NOT NULL DEFAULT '',
+    job_field VARCHAR(100) NOT NULL DEFAULT '',
+    city VARCHAR(100) NOT NULL DEFAULT '',
+    exp_level VARCHAR(50) NOT NULL DEFAULT '',
     median_salary NUMERIC NOT NULL,
-    date DATE DEFAULT CURRENT_DATE
+    date DATE DEFAULT CURRENT_DATE,
+
+    CONSTRAINT unique_salary_insight UNIQUE (skill_name, job_field, city, exp_level, date)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sal_insights_lookup ON salary_insights(skill_name, job_field, city, exp_level);
@@ -166,3 +170,71 @@ CREATE TABLE IF NOT EXISTS company_hiring_stats (
     
     CONSTRAINT unique_comp_date UNIQUE (company, date)
 );
+
+
+-- 9. CRAWL STATE TABLE
+CREATE TABLE IF NOT EXISTS crawl_state (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source VARCHAR(50) NOT NULL,
+    domain VARCHAR(100) NOT NULL,
+    keyword VARCHAR(255) NOT NULL,
+    last_page INT DEFAULT 1,
+    last_run TIMESTAMPTZ DEFAULT NOW(),
+    next_run TIMESTAMPTZ DEFAULT NULL,
+    status VARCHAR(20) DEFAULT 'success',
+    error_count INT DEFAULT 0,
+    CONSTRAINT unique_source_keyword UNIQUE (source, domain, keyword)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crawl_state_lookup ON crawl_state(source, domain, keyword);
+
+
+-- 10. JOB EVENTS TABLE
+CREATE TABLE IF NOT EXISTS job_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL,
+    event_type VARCHAR(50) NOT NULL, -- 'created', 'updated', 'closed', 'reopened'
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_events_job_id ON job_events(job_id);
+CREATE INDEX IF NOT EXISTS idx_job_events_type_time ON job_events(event_type, timestamp);
+
+
+-- 11. SKILL TAXONOMY TABLE
+CREATE TABLE IF NOT EXISTS skill_taxonomy (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    skill_name VARCHAR(100) UNIQUE NOT NULL,
+    stream VARCHAR(50) NOT NULL,
+    supply_score NUMERIC NOT NULL,
+    category VARCHAR(100) DEFAULT NULL,
+    aliases TEXT[] DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed initial skill taxonomy data
+INSERT INTO skill_taxonomy (skill_name, stream, supply_score, aliases) VALUES
+('Communication', 'biz', 75, ARRAY['communication']),
+('Excel', 'biz', 68, ARRAY['excel']),
+('Python', 'cs', 45, ARRAY['python']),
+('SQL', 'data', 42, ARRAY['sql']),
+('JavaScript', 'cs', 48, ARRAY['javascript', 'typescript']),
+('Java', 'cs', 40, ARRAY['java']),
+('Machine Learning', 'data', 18, ARRAY['machine learning', 'deep learning', 'tensorflow', 'pytorch']),
+('AWS / Cloud', 'cs', 22, ARRAY['aws', 'azure', 'gcp']),
+('DevOps / Docker', 'cs', 15, ARRAY['devops', 'docker', 'kubernetes', 'ci/cd']),
+('Generative AI', 'data', 6, ARRAY['gen ai', 'large language models', 'retrieval augmented generation', 'langchain', 'prompt engineering']),
+('Cybersecurity', 'cs', 10, ARRAY['cybersecurity']),
+('Statistics', 'data', 25, ARRAY['statistics']),
+('Project Management', 'biz', 32, ARRAY['project management', 'agile', 'scrum']),
+('UI/UX Design', 'design', 14, ARRAY['ui/ux design', 'figma']),
+('C / C++', 'cs', 35, ARRAY['c++']),
+('Embedded Systems', 'elec', 12, ARRAY['embedded systems']),
+('Data Engineering', 'data', 16, ARRAY['data engineering']),
+('Tableau / PowerBI', 'data', 20, ARRAY['tableau', 'power bi'])
+ON CONFLICT (skill_name) DO UPDATE SET
+    stream = EXCLUDED.stream,
+    supply_score = EXCLUDED.supply_score,
+    aliases = EXCLUDED.aliases,
+    updated_at = NOW();

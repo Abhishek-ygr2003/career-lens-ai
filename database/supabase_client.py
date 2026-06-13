@@ -10,6 +10,7 @@ Supabase database client with support for:
 """
 
 import os
+import json
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -146,48 +147,24 @@ def mark_jobs_cleaned(job_ids: list) -> None:
 
 def fetch_known_job_ids(source: str) -> set:
     """
-    Return a set of all source_job_id values already in the jobs table
-    for the given source.
+    DEPRECATED: Now handled entirely on database-level using ON CONFLICT DO UPDATE.
+    Returns an empty set to avoid query overhead and memory warnings on larger datasets.
     """
-    client = get_supabase_client()
-    all_ids = set()
-    offset = 0
-    page_size = 1000
-
-    while True:
-        try:
-            response = (
-                client.table("jobs")
-                .select("source_job_id")
-                .eq("source", source)
-                .range(offset, offset + page_size - 1)
-                .execute()
-            )
-            batch = getattr(response, "data", []) or []
-            if not batch:
-                break
-            all_ids.update(row["source_job_id"] for row in batch)
-            if len(batch) < page_size:
-                break
-            offset += page_size
-        except Exception as e:
-            print(f"  Warning: Could not fetch known IDs for {source}: {e}")
-            break
-
-    return all_ids
+    return set()
 
 
 # ═════════════════════════════════════════════════════════════
 #  STALE JOB DETECTION
-# ═════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════
 
 def mark_stale_jobs(stale_days: int = 14) -> int:
     """
-    Mark jobs not seen in `stale_days` as inactive.
+    Mark jobs not seen in `stale_days` as inactive and set closed_at.
     Returns the count of jobs marked stale.
     """
     client = get_supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
+    now_str = datetime.now(timezone.utc).isoformat()
 
     stale_count = 0
 
@@ -195,12 +172,15 @@ def mark_stale_jobs(stale_days: int = 14) -> int:
     try:
         response = (
             client.table("jobs")
-            .update({"is_active": False})
+            .update({"is_active": False, "closed_at": now_str})
             .lt("last_seen_at", cutoff)
             .eq("is_active", True)
             .execute()
         )
-        stale_count += len(getattr(response, "data", []) or [])
+        data = getattr(response, "data", []) or []
+        stale_count += len(data)
+        for job in data:
+            log_job_event(job.get("id"), "closed", {"closed_at": now_str, "reason": f"Unseen for {stale_days} days"})
     except Exception as e:
         print(f"  Warning: Failed to mark stale jobs in jobs: {e}")
 
@@ -208,11 +188,14 @@ def mark_stale_jobs(stale_days: int = 14) -> int:
     try:
         response = (
             client.table("jobs_analytics")
-            .update({"is_active": False})
+            .update({"is_active": False, "closed_at": now_str})
             .lt("last_seen_at", cutoff)
             .eq("is_active", True)
             .execute()
         )
+        data = getattr(response, "data", []) or []
+        for job in data:
+            log_job_event(job.get("id"), "closed", {"closed_at": now_str, "reason": f"Unseen for {stale_days} days"})
     except Exception as e:
         print(f"  Warning: Failed to mark stale analytics in jobs_analytics: {e}")
 
@@ -247,6 +230,7 @@ def upsert_jobs(jobs_list: list) -> list:
     for job in deduped_jobs:
         job["last_seen_at"] = now_str
         job["updated_at"] = now_str
+        job["is_active"] = True
 
     client = get_supabase_client()
     try:
@@ -314,9 +298,23 @@ def upsert_analytics(jobs_list: list, batch_size: int = 500) -> int:
             total_upserted += len(data)
             print(f"  Batch {i // batch_size + 1}: upserted {len(data)} records.")
             
-            # Form skill mapping associations
+            # Form skill mapping associations and log events
             for record in data:
                 job_id = record.get("id")
+                
+                # Deduce if created or updated
+                created_at = record.get("created_at")
+                updated_at = record.get("updated_at")
+                event_type = "created"
+                if created_at and updated_at and created_at != updated_at:
+                    event_type = "updated"
+                
+                log_job_event(job_id, event_type, {
+                    "source": record.get("source"),
+                    "title": record.get("title"),
+                    "company": record.get("company")
+                })
+
                 std_skills = record.get("standardized_skills") or []
                 if job_id and std_skills:
                     for skill in std_skills:
@@ -344,7 +342,7 @@ _DASHBOARD_COLUMNS = (
     "id,fingerprint,title,company,job_category,job_field,job_sub_field,"
     "city,state,work_mode,source,min_exp,max_exp,min_salary,max_salary,"
     "salary_currency,standardized_skills,posted_at,collected_at,"
-    "is_active,last_seen_at,job_url,company_logo_url,search_keywords,"
+    "is_active,last_seen_at,closed_at,job_url,company_logo_url,search_keywords,"
     "raw_location,raw_experience"
 )
 
@@ -494,6 +492,69 @@ def get_recent_collection(keyword: str, source: str, cooldown_minutes: int = 60)
         return data[0] if data else None
     except Exception:
         return None
+
+
+# ═════════════════════════════════════════════════════════════
+#  CRAWL STATE & EVENT TRACKING
+# ═════════════════════════════════════════════════════════════
+
+def fetch_crawl_state(source: str, domain: str, keyword: str) -> dict | None:
+    """Fetch the crawl state for a specific source, domain, and keyword."""
+    client = get_supabase_client()
+    try:
+        res = (
+            client.table("crawl_state")
+            .select("*")
+            .eq("source", source)
+            .eq("domain", domain)
+            .eq("keyword", keyword)
+            .execute()
+        )
+        data = getattr(res, "data", []) or []
+        return data[0] if data else None
+    except Exception as e:
+        print(f"  Warning: Failed to fetch crawl state: {e}")
+        return None
+
+
+def update_crawl_state(
+    source: str,
+    domain: str,
+    keyword: str,
+    last_page: int,
+    status: str = "success",
+    error_count: int = 0
+) -> None:
+    """Upsert crawl state details."""
+    client = get_supabase_client()
+    now_str = datetime.now(timezone.utc).isoformat()
+    try:
+        client.table("crawl_state").upsert({
+            "source": source,
+            "domain": domain,
+            "keyword": keyword,
+            "last_page": last_page,
+            "last_run": now_str,
+            "status": status,
+            "error_count": error_count
+        }, on_conflict="source,domain,keyword").execute()
+    except Exception as e:
+        print(f"  Warning: Failed to update crawl state: {e}")
+
+
+def log_job_event(job_id: str, event_type: str, metadata: dict = None) -> None:
+    """Record a lifecycle event in job_events table."""
+    if not job_id:
+        return
+    client = get_supabase_client()
+    try:
+        client.table("job_events").insert({
+            "job_id": job_id,
+            "event_type": event_type,
+            "metadata": metadata or {}
+        }).execute()
+    except Exception as e:
+        print(f"  Warning: Failed to log job event ({event_type}) for job {job_id}: {e}")
 
 
 # ═════════════════════════════════════════════════════════════

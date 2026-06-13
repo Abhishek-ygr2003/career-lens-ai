@@ -810,7 +810,7 @@ def main():
     with tabs[5]: render_category_analysis(filtered_df)
     with tabs[6]: render_company_analysis(filtered_df)
     with tabs[7]:
-        # Trigger reload of upgraded market intelligence module
+        # Render the upgraded labor market intelligence module
         render_market_intelligence(filtered_df)
 
     # ── Auto-rerun loop if collection is running ──────────────

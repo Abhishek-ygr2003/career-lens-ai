@@ -40,6 +40,33 @@ SUPPLY_DATA = {
     "tableau / powerbi": {"display": "Tableau / PowerBI", "supply": 20, "streams": ["all", "biz", "fin", "data"], "db_keys": ["tableau", "power bi"]}
 }
 
+
+def load_supply_data():
+    """Load taxonomy from the database, falling back to static config."""
+    try:
+        from database.supabase_client import get_supabase_client
+        client = get_supabase_client()
+        res = client.table("skill_taxonomy").select("*").execute()
+        data = getattr(res, "data", []) or []
+        if not data:
+            return SUPPLY_DATA
+        
+        db_supply = {}
+        for row in data:
+            skill_name = row["skill_name"]
+            key = skill_name.lower().strip()
+            db_supply[key] = {
+                "display": skill_name,
+                "supply": float(row["supply_score"]),
+                "streams": [row["stream"]] if isinstance(row["stream"], str) else row["stream"],
+                "db_keys": [a.lower().strip() for a in (row.get("aliases") or [skill_name])]
+            }
+        return db_supply
+    except Exception as e:
+        print(f"  [Info] Could not query skill_taxonomy table: {e}. Using local dictionary.")
+        return SUPPLY_DATA
+
+
 def get_experience_band_simple(min_exp):
     if pd.isna(min_exp):
         return "Unknown"
@@ -53,15 +80,60 @@ def get_experience_band_simple(min_exp):
     else:
         return "Senior"
 
+
 def run_precomputation():
     """
-    Load data from jobs_analytics, compute aggregates, and save to Supabase tables
-    (with local JSON file fallback).
+    Orchestrate analytics precomputations. Prioritizes database-side PL/pgSQL RPC
+    for speed and memory safety. Falls back to Pandas calculations for local/offline execution.
     """
     print("Precalculating labor market intelligence metrics...")
     
-    # Import supabase fetch
-    from database.supabase_client import fetch_all_analytics, get_supabase_client
+    from database.supabase_client import get_supabase_client
+    
+    # ── Attempt Supabase RPC (Priority 3) ─────────────────────────
+    try:
+        client = get_supabase_client()
+        print("  Triggering PL/pgSQL database precomputations (RPC)...")
+        client.rpc("run_precompute_analytics", {}).execute()
+        print("  ✓ Stored procedure executed successfully inside PostgreSQL.")
+        
+        # Pull generated data to update the local fallback backup files
+        print("  Updating local backup files from database tables...")
+        sdh = client.table("skill_demand_history").select("*").order("date").execute()
+        sga = client.table("skill_gap_analysis").select("*").order("date").execute()
+        sal = client.table("salary_insights").select("*").order("date").execute()
+        loc = client.table("location_insights").select("*").order("date").execute()
+        comp = client.table("company_hiring_stats").select("*").order("date").execute()
+        
+        # Get count of active jobs in database
+        active_res = client.table("jobs_analytics").select("id", count="exact").eq("is_active", True).limit(1).execute()
+        total_jobs = getattr(active_res, "count", 0) or 0
+        
+        today_str = date.today().isoformat()
+        local_data = {
+            "skill_demand_history": getattr(sdh, "data", []) or [],
+            "skill_gap_analysis": getattr(sga, "data", []) or [],
+            "salary_insights": getattr(sal, "data", []) or [],
+            "location_insights": getattr(loc, "data", []) or [],
+            "company_hiring_stats": getattr(comp, "data", []) or [],
+            "freshness": {
+                "total_jobs": total_jobs,
+                "unique_companies": len(set(c.get("company") for c in (getattr(comp, "data", []) or []))),
+                "sources": ["naukri", "foundit", "adzuna"],
+                "last_collected": today_str,
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        }
+        
+        save_local_fallback(local_data)
+        return
+        
+    except Exception as e:
+        print(f"  [Warning] Database precomputation failed/unavailable: {e}")
+        print("  Falling back to in-memory Pandas calculations...")
+
+    # ── Fallback Pandas aggregations (local execution) ───────────
+    from database.supabase_client import fetch_all_analytics
     
     raw_analytics = []
     try:
@@ -87,6 +159,7 @@ def run_precomputation():
         return
         
     df = pd.DataFrame(raw_analytics)
+    taxonomy = load_supply_data()
     
     # Coerce fields
     df["min_salary"] = pd.to_numeric(df["min_salary"], errors="coerce")
@@ -104,16 +177,13 @@ def run_precomputation():
     today_str = date.today().isoformat()
     
     # ── 1. Skill Demand History ───────────────────────────────────
-    print("  Calculating skill demand history...")
+    print("  Calculating skill demand history (Pandas)...")
     sdh_records = []
-    
-    # Group by date to get history
     for dt, group in df.groupby("collected_at"):
         total_jobs = len(group)
         if total_jobs == 0:
             continue
-        # For each skill
-        for skill_key, info in SUPPLY_DATA.items():
+        for skill_key, info in taxonomy.items():
             matches = 0
             for _, row in group.iterrows():
                 std_skills = [s.lower().strip() for s in (row.get("standardized_skills") or [])]
@@ -127,25 +197,19 @@ def run_precomputation():
             })
             
     # ── 2. Skill Gap Analysis ─────────────────────────────────────
-    print("  Calculating skill gap scores...")
+    print("  Calculating skill gap scores (Pandas)...")
     sga_records = []
-    
-    # Group by date and stream
     for dt, group in df.groupby("collected_at"):
         total_jobs = len(group)
         if total_jobs == 0:
             continue
-            
-        for skill_key, info in SUPPLY_DATA.items():
-            # Demand calculation
+        for skill_key, info in taxonomy.items():
             matches = 0
             for _, row in group.iterrows():
                 std_skills = [s.lower().strip() for s in (row.get("standardized_skills") or [])]
                 if any(k in std_skills for k in info["db_keys"]):
                     matches += 1
             demand_pct = round((matches / total_jobs) * 100, 1)
-            
-            # Map for each stream it belongs to
             for stream in info["streams"]:
                 sga_records.append({
                     "skill_name": info["display"],
@@ -157,13 +221,13 @@ def run_precomputation():
                 })
                 
     # ── 3. Salary Insights ────────────────────────────────────────
-    print("  Calculating salary insights...")
+    print("  Calculating salary insights (Pandas)...")
     sal_records = []
     sal_df = df[df["salary_mid"].notna() & (df["salary_mid"] > 0)]
     
     if not sal_df.empty:
-        # Breakdown 1: By Skill
-        for skill_key, info in SUPPLY_DATA.items():
+        # By Skill
+        for skill_key, info in taxonomy.items():
             skill_jobs = []
             for _, row in sal_df.iterrows():
                 std_skills = [s.lower().strip() for s in (row.get("standardized_skills") or [])]
@@ -172,62 +236,65 @@ def run_precomputation():
             if skill_jobs:
                 sal_records.append({
                     "skill_name": info["display"],
-                    "job_field": None,
-                    "city": None,
-                    "exp_level": None,
+                    "job_field": "",
+                    "city": "",
+                    "exp_level": "",
                     "median_salary": float(np.median(skill_jobs)),
                     "date": today_str
                 })
                 
-        # Breakdown 2: By Job Field
+        # By Job Field
         for field, group in sal_df.groupby("job_field"):
-            sal_records.append({
-                "skill_name": None,
-                "job_field": field,
-                "city": None,
-                "exp_level": None,
-                "median_salary": float(group["salary_mid"].median()),
-                "date": today_str
-            })
+            if field and field != 'Other':
+                sal_records.append({
+                    "skill_name": "",
+                    "job_field": field,
+                    "city": "",
+                    "exp_level": "",
+                    "median_salary": float(group["salary_mid"].median()),
+                    "date": today_str
+                })
             
-        # Breakdown 3: By City
+        # By City
         for city, group in sal_df.groupby("city"):
-            sal_records.append({
-                "skill_name": None,
-                "job_field": None,
-                "city": city,
-                "exp_level": None,
-                "median_salary": float(group["salary_mid"].median()),
-                "date": today_str
-            })
+            if city:
+                sal_records.append({
+                    "skill_name": "",
+                    "job_field": "",
+                    "city": city,
+                    "exp_level": "",
+                    "median_salary": float(group["salary_mid"].median()),
+                    "date": today_str
+                })
             
-        # Breakdown 4: By Experience
+        # By Experience
         sal_df = sal_df.copy()
         sal_df["exp_band"] = sal_df["min_exp"].apply(get_experience_band_simple)
         for band, group in sal_df.groupby("exp_band"):
             sal_records.append({
-                "skill_name": None,
-                "job_field": None,
-                "city": None,
+                "skill_name": "",
+                "job_field": "",
+                "city": "",
                 "exp_level": band,
                 "median_salary": float(group["salary_mid"].median()),
                 "date": today_str
             })
             
     # ── 4. Location Insights ──────────────────────────────────────
-    print("  Calculating location insights...")
+    print("  Calculating location insights (Pandas)...")
     loc_records = []
     for city, group in df.groupby("city"):
-        avg_sal = group["salary_mid"].mean()
-        loc_records.append({
-            "city": city,
-            "job_count": len(group),
-            "avg_salary": float(avg_sal) if not pd.isna(avg_sal) else None,
-            "date": today_str
-        })
+        if city:
+            avg_sal = group["salary_mid"].mean()
+            loc_records.append({
+                "city": city,
+                "job_count": len(group),
+                "avg_salary": float(avg_sal) if not pd.isna(avg_sal) else None,
+                "date": today_str
+            })
         
     # ── 5. Company Hiring Stats ───────────────────────────────────
-    print("  Calculating company hiring statistics...")
+    print("  Calculating company hiring statistics (Pandas)...")
     comp_records = []
     for comp, group in df.groupby("company"):
         if comp and comp != "Unknown":
@@ -237,7 +304,6 @@ def run_precomputation():
                 "date": today_str
             })
             
-    # ── Upload to Supabase or Save to local Fallback ──────────────
     local_data = {
         "skill_demand_history": sdh_records,
         "skill_gap_analysis": sga_records,
@@ -253,39 +319,42 @@ def run_precomputation():
         }
     }
     
-    # Save local fallback file
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    fallback_path = os.path.join(project_root, "data", "processed", "precomputed_analytics.json")
-    os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
-    with open(fallback_path, "w", encoding="utf-8") as f:
-        json.dump(local_data, f, indent=4, default=str)
-    print(f"  ✓ Local precomputed fallback saved to {fallback_path}")
+    save_local_fallback(local_data)
     
     # Try uploading to Supabase
     try:
         client = get_supabase_client()
-        print("  Uploading precomputed tables to Supabase...")
+        print("  Uploading local aggregates to Supabase...")
         
-        # 1. Skill Demand History
         if sdh_records:
             client.table("skill_demand_history").upsert(sdh_records, on_conflict="skill_name,date").execute()
-        # 2. Skill Gap Analysis
         if sga_records:
             client.table("skill_gap_analysis").upsert(sga_records, on_conflict="skill_name,stream,date").execute()
-        # 3. Salary Insights
         if sal_records:
-            client.table("salary_insights").upsert(sal_records).execute()
-        # 4. Location Insights
+            # Drop entries for today first to resolve potential constraint conflict in standard tables
+            client.table("salary_insights").delete().eq("date", today_str).execute()
+            client.table("salary_insights").upsert(sal_records, on_conflict="skill_name,job_field,city,exp_level,date").execute()
         if loc_records:
             client.table("location_insights").upsert(loc_records, on_conflict="city,date").execute()
-        # 5. Company Hiring Stats
         if comp_records:
             client.table("company_hiring_stats").upsert(comp_records, on_conflict="company,date").execute()
             
-        print("  ✓ Successfully synchronized precomputations with Supabase.")
+        print("  ✓ Successfully synchronized Pandas aggregates with Supabase.")
     except Exception as e:
-        print(f"  [Warning] Could not upload to Supabase: {e}. Falling back to local files.")
+        print(f"  [Warning] Could not upload aggregates to Supabase: {e}")
+
+
+def save_local_fallback(data):
+    """Save fallback backup snapshot locally."""
+    fallback_path = os.path.join(PROJECT_ROOT, "data", "processed", "precomputed_analytics.json")
+    os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
+    try:
+        with open(fallback_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, default=str)
+        print(f"  ✓ Local precomputed fallback saved to {fallback_path}")
+    except Exception as e:
+        print(f"  [Error] Failed to write local fallback file: {e}")
+
 
 if __name__ == "__main__":
     run_precomputation()
