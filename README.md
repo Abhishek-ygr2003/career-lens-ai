@@ -184,6 +184,16 @@ python run_full_pipeline.py --dry-run
 python database/precompute_analytics.py
 ```
 
+### Archive Monthly Snapshots
+
+```bash
+# Compile static monthly snapshots (job field, city share, skill demand) and archive them
+python database/archive_snapshots.py
+
+# Backfill a specific month (e.g. June 2026)
+python database/archive_snapshots.py --month "2026-06"
+```
+
 ### Launch the Dashboard
 
 ```bash
@@ -323,6 +333,7 @@ career-lens-ai/
 │   ├── schema_migration.sql         # collection_runs table DDL
 │   ├── schema_production.sql        # Production-ready consolidated DDL
 │   ├── precompute_analytics.py      # Precompute all analytics tables (NEW)
+│   ├── archive_snapshots.py         # Monthly snapshot archiver CLI (NEW)
 │   └── supabase_client.py           # Supabase API client + fetch helpers
 │
 ├── analysis/
@@ -381,6 +392,7 @@ Five precomputed analytics tables:
 | `salary_insights` | Precomputed median salaries by field, city, skill |
 | `location_insights` | Job count and active listing counts per city, date |
 | `company_hiring_stats` | Top hiring companies with listing volume history |
+| `monthly_snapshots` | Historical active job metrics (fields, cities, skills, salary stats) month-over-month |
 
 Full DDL and column-level documentation is in [AGENTS.md](./AGENTS.md).
 
@@ -414,17 +426,20 @@ Full DDL and column-level documentation is in [AGENTS.md](./AGENTS.md).
 ### Phase 4 ✅ (Complete)
 - **Adzuna API collector + transformer** (third data source)
 - **Multi-domain pipeline orchestrator** (`run_full_pipeline.py`)
-  - 5 domains: Data Science & AI, Cybersecurity, Software Engineering, Healthcare, Sales & Marketing
+  - Expanded classifier parsing (`cleaner.py`) for new domains: **Cybersecurity** (Security Operations, Penetration Testing, Security Engineering) and **Healthcare** (Medical Practice, Nursing, Allied Health) alongside Software Engineering, Sales & Marketing, and Data Science & AI.
   - Sequential domain execution with configurable cooldown
   - Full DB clear or incremental modes
 - **Precomputed analytics pipeline** (`precompute_analytics.py`)
-  - `skill_demand_history`, `skill_gap_analysis`, `salary_insights`, `location_insights`, `company_hiring_stats`
+  - Precomputes fast-read aggregates: `skill_demand_history`, `skill_gap_analysis`, `salary_insights`, `location_insights`, `company_hiring_stats`
+- **Monthly Snapshots Archiver** (`archive_snapshots.py`)
+  - Extracts and compiles historical metric snapshots (job fields, city shares, and skill demand with average salaries) at the end of each month, saving to `monthly_snapshots` with backfill capabilities.
 - **Labor Market Intelligence dashboard** (full `market_intelligence.py` rewrite)
   - Freshness & connector status panel
   - 3-radar Career Path overview (Field Demand, Common Skills, Future Skills)
   - Skill Gap Engine by academic stream with market verdict badges
   - Historical Tech Trends chart (multi-skill trendlines)
   - Salary Intelligence by field, city, and skill
+  - Improved layout rendering sub-fields, city shares, and a dedicated work mode overview row, including an auto-alert callout for unclassified jobs.
   - **Gemini AI Career Advisor** — reads live pipeline data, generates personalized 5-section roadmap
 - Major bug fixes: `use_container_width=True` on all charts, `st.markdown()` for Gemini output, radar chart empty-list guards, session_state caching for DB calls, data-availability warnings
 

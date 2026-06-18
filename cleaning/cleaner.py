@@ -525,6 +525,14 @@ CATEGORY_RULES = [
     # Management
     ("Management",          "Product Management",   ["product manager", "product owner", "scrum master", "agile coach", "project manager"]),
     ("Management",          "Engineering Manager",  ["engineering manager", "tech lead", "technical lead", "vp engineering", "cto", "director of engineering"]),
+    # Cybersecurity
+    ("Cybersecurity",       "Security Operations",  ["cybersecurity", "cyber security", "information security", "infosec", "soc analyst", "security analyst"]),
+    ("Cybersecurity",       "Penetration Testing",  ["penetration tester", "pen tester", "ethical hacker", "vulnerability assessor", "red team"]),
+    ("Cybersecurity",       "Security Engineering", ["security engineer", "application security", "appsec", "security architect", "cloud security"]),
+    # Healthcare
+    ("Healthcare",          "Medical Practice",     ["doctor", "physician", "medical officer", "surgeon", "dentist", "pediatrician", "cardiologist"]),
+    ("Healthcare",          "Nursing",              ["nurse", "nursing", "registered nurse", "clinical nurse", "nurse practitioner"]),
+    ("Healthcare",          "Allied Health",        ["pharmacist", "lab technician", "radiologist", "physiotherapist", "therapist", "medical lab"]),
     # Support
     ("Human Resources",     "Human Resources",      ["hr", "human resources", "recruiter", "talent acquisition", "people operations"]),
     ("Finance",             "Finance",              ["finance", "accountant", "financial analyst", "auditor", "controller", "cfo"]),
@@ -544,6 +552,8 @@ LEGACY_CATEGORY_RULES = [
     ("Sales & Development", ["sales", "business development", "bde", "account manager", "account executive", "client success", "customer success"]),
     ("Marketing",           ["marketing", "seo", "digital marketing", "growth hacker", "social media", "content writer", "content creator"]),
     ("Product Management",  ["product manager", "product owner", "scrum master", "agile coach", "project manager"]),
+    ("Cybersecurity",       ["cybersecurity", "cyber security", "information security", "infosec", "penetration tester", "ethical hacker", "security engineer", "security analyst"]),
+    ("Healthcare",          ["doctor", "physician", "medical officer", "nurse", "nursing", "surgeon", "pharmacist", "therapist"]),
     ("Human Resources",     ["hr", "human resources", "recruiter", "talent acquisition"]),
     ("Finance",             ["finance", "accountant", "financial analyst", "auditor"]),
 ]

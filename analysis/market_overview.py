@@ -3,42 +3,52 @@ CareerLens AI — analysis/market_overview.py
 ============================================
 Market Overview tab: KPIs + high-level distribution charts.
 
-Fixes applied (v2):
-  Bugs:
-    1. width="stretch"  (was invalid width='stretch')
-    2. kpi_card receives str safely for non-numeric KPIs
-    3. Per-chart empty-state guards (source / work_mode may be all-Unknown)
-    4. Work-mode palette cycles COLORS instead of hardcoded 3-item list
-
-  Performance:
-    5. All value_counts() computed once at the top, not inline per chart
-    6. Removed unused skill_counter import
-
-  UI:
-    7. Section divider + label between KPI row and charts
-    8. City bar uses brand gradient colour scale instead of Viridis
-    9. Work mode switched from donut → horizontal bar (avoids duplicate pie style)
-   10. Chart subtitles show live counts (e.g. "14 categories · 1 248 jobs")
-   11. Consistent chart height (360px) and margin via PLOTLY_LAYOUT extension
-   12. Top-city and top-category KPI cards show count as sub-label
+v3 improvements:
+  - "Other" category is separated from the main chart to avoid skewing visuals
+  - New sub-field distribution chart for finer-grained category breakdown
+  - Callout explains what "Other" means when it's large
+  - Top-category KPI excludes "Other" to show the real leading category
 """
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from analysis.helpers import COLORS, PLOTLY_LAYOUT, EXP_BAND_ORDER, kpi_card
 
 
-# ── Chart height shared across all visuals in this tab ───────
 _H = 360
 
 
 def _chart_layout(**overrides) -> dict:
-    """Merge PLOTLY_LAYOUT with tab-specific defaults."""
     base = {**PLOTLY_LAYOUT, "height": _H, "margin": {"t": 48, "b": 32, "l": 16, "r": 16}}
     base.update(overrides)
     return base
+
+
+def _bar_with_counts(df, x_col, y_col, title, height=None, color_seq=None, top_n=None):
+    """Reusable horizontal bar chart with count labels."""
+    if top_n:
+        df = df.head(top_n)
+    fig = px.bar(
+        df, x=x_col, y=y_col,
+        orientation="h",
+        color=y_col,
+        color_discrete_sequence=color_seq or COLORS,
+        title=title,
+    )
+    layout_kw = _chart_layout(showlegend=False)
+    if height:
+        layout_kw["height"] = height
+    fig.update_layout(**layout_kw)
+    fig.update_traces(
+        texttemplate="%{x:,}",
+        textposition="outside",
+        textfont_size=11,
+        cliponaxis=False,
+    )
+    return fig
 
 
 def render_market_overview(df: pd.DataFrame) -> None:
@@ -49,22 +59,41 @@ def render_market_overview(df: pd.DataFrame) -> None:
         st.info("No jobs match your current filters.")
         return
 
-    # ── Pre-compute aggregates once  (Fix 5) ─────────────────
+    # ── Pre-compute aggregates ────────────────────────────────
     unique_companies = df["company"].nunique()
 
-    city_series  = df[df["city"] != "Unknown"]["city"]
+    city_series = df[df["city"] != "Unknown"]["city"]
     top_city_val = city_series.mode().iloc[0] if not city_series.empty else "N/A"
-    top_city_n   = int((city_series == top_city_val).sum()) if top_city_val != "N/A" else 0
+    top_city_n = int((city_series == top_city_val).sum()) if top_city_val != "N/A" else 0
 
-    # Use job_field for top-level grouping if available, else job_category
     cat_col = "job_field" if "job_field" in df.columns and df["job_field"].nunique() > 1 else "job_category"
-    top_cat_val  = df[cat_col].mode().iloc[0] if not df[cat_col].empty else "N/A"
-    top_cat_n    = int((df[cat_col] == top_cat_val).sum()) if top_cat_val != "N/A" else 0
 
-    cat_counts  = df[cat_col].value_counts().reset_index()
-    cat_counts.columns = ["Category", "Count"]
+    # For the KPI, skip "Other" to show the real leading category
+    cat_no_other = df[df[cat_col] != "Other"]
+    if not cat_no_other.empty:
+        top_cat_val = cat_no_other[cat_col].mode().iloc[0]
+        top_cat_n = int((cat_no_other[cat_col] == top_cat_val).sum())
+    else:
+        top_cat_val = "N/A"
+        top_cat_n = 0
 
-    src_counts  = df["source"].value_counts().reset_index()
+    # Category counts — split known vs Other
+    cat_all_counts = df[cat_col].value_counts().reset_index()
+    cat_all_counts.columns = ["Category", "Count"]
+    cat_known = cat_all_counts[cat_all_counts["Category"] != "Other"]
+    cat_other = cat_all_counts[cat_all_counts["Category"] == "Other"]
+    other_count = int(cat_other["Count"].sum()) if not cat_other.empty else 0
+    other_pct = (other_count / total * 100) if total > 0 else 0
+
+    # Sub-field counts (excluding Other)
+    sub_col = "job_sub_field"
+    if sub_col in df.columns:
+        sub_known = df[df[sub_col] != "Other"][sub_col].value_counts().reset_index()
+        sub_known.columns = ["Sub-Field", "Count"]
+    else:
+        sub_known = pd.DataFrame(columns=["Sub-Field", "Count"])
+
+    src_counts = df["source"].value_counts().reset_index()
     src_counts.columns = ["Source", "Count"]
 
     city_counts = (
@@ -85,12 +114,11 @@ def render_market_overview(df: pd.DataFrame) -> None:
     with c2:
         kpi_card("Companies", f"{unique_companies:,}", "🏢")
     with c3:
-        # Fix 2: pass string safely; show how many jobs in that city
         kpi_card("Top City", top_city_val, "📍", sub=f"{top_city_n:,} jobs")
     with c4:
         kpi_card("Top Category", top_cat_val, "🏷️", sub=f"{top_cat_n:,} jobs")
 
-    # ── Section divider  (Fix 7) ──────────────────────────────
+    # ── Section divider ───────────────────────────────────────
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown(
         "<div class='section-header'>📊 Distribution Overview</div>",
@@ -101,31 +129,19 @@ def render_market_overview(df: pd.DataFrame) -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        if cat_counts.empty:
+        if cat_known.empty:
             st.info("No category data available.")
         else:
-            n_cats = len(cat_counts)
-            fig = px.bar(
-                cat_counts,
-                x="Count", y="Category",
-                orientation="h",
-                color="Category",
-                color_discrete_sequence=COLORS,
+            n_cats = len(cat_known)
+            fig = _bar_with_counts(
+                cat_known.sort_values("Count"),
+                "Count", "Category",
                 title=f"Jobs by Category  <sup style='font-size:11px;color:#64748b'>"
-                      f"{n_cats} categories · {total:,} jobs</sup>",
+                      f"{n_cats} categories · {total - other_count:,} classified jobs</sup>",
             )
-            fig.update_layout(**_chart_layout(showlegend=False))
-            fig.update_traces(
-                texttemplate="%{x:,}",
-                textposition="outside",
-                textfont_size=11,
-                cliponaxis=False,
-            )
-            # Fix 1: width="stretch"
             st.plotly_chart(fig, width="stretch")
 
     with col2:
-        # Fix 3: guard against empty source data
         src_known = src_counts[src_counts["Source"] != "Unknown"]
         if src_known.empty:
             st.info("No source data available.")
@@ -147,14 +163,36 @@ def render_market_overview(df: pd.DataFrame) -> None:
             )
             st.plotly_chart(fig, width="stretch")
 
-    # ── Row 2: City bar · Work-mode bar ───────────────────────
+    # ── "Other" callout (if significant) ──────────────────────
+    if other_pct >= 5:
+        st.info(
+            f"ℹ️ **\"Other\" category ({other_count:,} jobs · {other_pct:.0f}%):** "
+            f"These jobs didn't match any classification keyword in the title or description. "
+            f"This usually means the job title is too generic (e.g. \"Executive Assistant\", \"Office Boy\") "
+            f"or belongs to a field not yet covered by the classifier (e.g. legal, education, logistics). "
+            f"Run the pipeline again after updating `cleaner.py` to re-classify these."
+        )
+
+    # ── Row 2: Sub-field bar · City bar ──────────────────────
     col3, col4 = st.columns(2)
 
     with col3:
+        if sub_known.empty:
+            st.info("No sub-field data available.")
+        else:
+            fig = _bar_with_counts(
+                sub_known.sort_values("Count"),
+                "Count", "Sub-Field",
+                title=f"Jobs by Sub-Field  <sup style='font-size:11px;color:#64748b'>"
+                      f"top specializations</sup>",
+                top_n=12,
+            )
+            st.plotly_chart(fig, width="stretch")
+
+    with col4:
         if city_counts.empty:
             st.info("No city data available.")
         else:
-            # Fix 8: brand-aligned sequential palette instead of Viridis
             fig = px.bar(
                 city_counts,
                 x="City", y="Count",
@@ -175,29 +213,13 @@ def render_market_overview(df: pd.DataFrame) -> None:
             )
             st.plotly_chart(fig, width="stretch")
 
-    with col4:
-        # Fix 3: guard against empty / all-Unknown work mode
-        mode_known = mode_counts[mode_counts["Work Mode"] != "Unknown"]
-        if mode_known.empty:
-            st.info("No work-mode data available.")
-        else:
-            # Fix 9: horizontal bar instead of second donut — more readable,
-            #        avoids visual monotony with the Source donut above
-            # Fix 4: COLORS cycles dynamically, not a hardcoded 3-item list
-            fig = px.bar(
-                mode_known.sort_values("Count"),
-                x="Count", y="Work Mode",
-                orientation="h",
-                color="Work Mode",
-                color_discrete_sequence=COLORS,
-                title=f"Work Mode Distribution  <sup style='font-size:11px;"
-                      f"color:#64748b'>{len(mode_known)} modes</sup>",
-            )
-            fig.update_layout(**_chart_layout(showlegend=False))
-            fig.update_traces(
-                texttemplate="%{x:,}",
-                textposition="outside",
-                textfont_size=11,
-                cliponaxis=False,
-            )
-            st.plotly_chart(fig, width="stretch")
+    # ── Row 3: Work-mode bar ─────────────────────────────────
+    mode_known = mode_counts[mode_counts["Work Mode"] != "Unknown"]
+    if not mode_known.empty:
+        fig = _bar_with_counts(
+            mode_known.sort_values("Count"),
+            "Count", "Work Mode",
+            title=f"Work Mode Distribution  <sup style='font-size:11px;"
+                  f"color:#64748b'>{len(mode_known)} modes</sup>",
+        )
+        st.plotly_chart(fig, width="stretch")
